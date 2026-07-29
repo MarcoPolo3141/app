@@ -57,6 +57,15 @@ function buildMenu() {
       label: "Hilfe",
       submenu: [
         {
+          label: "Kurzhandbuch öffnen",
+          click: () => openBundledDoc("Kurzhandbuch.pdf"),
+        },
+        {
+          label: "Installationsanleitung öffnen",
+          click: () => openBundledDoc("Installationsanleitung.pdf"),
+        },
+        { type: "separator" },
+        {
           label: "Über 'Zeig, was du kannst!'",
           click: () =>
             dialog.showMessageBox(mainWindow, {
@@ -70,6 +79,29 @@ function buildMenu() {
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+function openBundledDoc(filename) {
+  // Im gepackten Zustand liegen die docs neben src/ (app.asar oder Ressourcenordner);
+  // im Entwicklungsmodus liegen sie eine Ebene über src/.
+  const candidates = [
+    // Gepackte App: von electron-builder als "extraResources" neben app.asar abgelegt (echte Datei, öffenbar).
+    path.join(process.resourcesPath || "", "docs", filename),
+    // Entwicklungsmodus (npm start): liegt eine Ebene über src/ als echte Datei.
+    path.join(__dirname, "..", "docs", filename),
+  ];
+  const found = candidates.find((p) => {
+    try { return fs.existsSync(p); } catch (_) { return false; }
+  });
+  if (found) {
+    shell.openPath(found);
+  } else {
+    dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      title: "Dokument nicht gefunden",
+      message: `${filename} konnte nicht gefunden werden.`,
+    });
+  }
 }
 
 async function exportBackup() {
@@ -105,6 +137,8 @@ ipcMain.handle("app:getMeta", () => ({
 }));
 
 ipcMain.handle("app:setLehrkraft", (e, info) => store.setLehrkraft(info));
+
+ipcMain.handle("app:setSchuljahr", (e, value) => store.setSchuljahr(value));
 
 ipcMain.handle("groups:list", () => store.listGroups().map((g) => ({ ...g, status: store.computeStatus(g) })));
 

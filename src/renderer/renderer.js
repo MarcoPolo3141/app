@@ -35,14 +35,31 @@ function findGroup(id) { return cache.groups.find((g) => g.id === id); }
 
 /* ---------------- Boot ---------------- */
 async function boot() {
-  cache.meta = await window.zwdk.getMeta();
+  try {
+    if (!window.zwdk) throw new Error("Die Verbindung zum Programm-Kern (zwdk) wurde nicht geladen. Preload-Skript prüfen.");
+    cache.meta = await window.zwdk.getMeta();
+    renderMetaLabels();
+    document.getElementById("newGroupBtn").onclick = openNewGroupModal;
+    const sidebarFoot = document.getElementById("sidebarFoot");
+    if (sidebarFoot) sidebarFoot.onclick = openSettingsModal;
+    await refreshGroups();
+    render();
+  } catch (err) {
+    console.error("Fehler beim Start:", err);
+    document.getElementById("content").innerHTML = `
+      <div class="card" style="padding:24px; border-color:var(--red);">
+        <div class="section-title" style="color:var(--red);">Fehler beim Laden</div>
+        <p style="font-size:13px; color:var(--ink-soft);">Die App konnte nicht korrekt starten. Fehlermeldung:</p>
+        <pre style="white-space:pre-wrap; background:var(--bg); border-radius:8px; padding:10px; font-size:12px;">${esc(String((err && err.stack) || err))}</pre>
+      </div>`;
+  }
+}
+
+function renderMetaLabels() {
   document.getElementById("schuljahrPill").textContent = `Schuljahr ${cache.meta.schuljahr}`;
   document.getElementById("lehrkraftName").textContent = cache.meta.lehrkraft.name || "Lehrkraft";
   document.getElementById("schuleLabel").textContent = cache.meta.lehrkraft.schule || "Schule hinterlegen";
   document.getElementById("avatarInitials").textContent = (cache.meta.lehrkraft.name || "L").slice(0, 2).toUpperCase();
-  document.getElementById("newGroupBtn").onclick = openNewGroupModal;
-  await refreshGroups();
-  render();
 }
 async function refreshGroups() { cache.groups = await window.zwdk.listGroups(); }
 
@@ -392,6 +409,31 @@ function openModal(html) {
   bd.onclick = (e) => { if (e.target === bd) closeModal(); };
 }
 function closeModal() { document.getElementById("modalBackdrop").classList.remove("open"); }
+
+function openSettingsModal() {
+  const m = cache.meta;
+  openModal(`
+    <h2>Einstellungen</h2>
+    <div class="field-row"><label>Name der Lehrkraft</label><input type="text" id="stName" value="${esc(m.lehrkraft.name)}"></div>
+    <div class="field-row"><label>Name der Schule</label><input type="text" id="stSchule" value="${esc(m.lehrkraft.schule)}"></div>
+    <div class="field-row"><label>Schuljahr</label><input type="text" id="stSchuljahr" value="${esc(m.schuljahr)}" placeholder="z.B. 2025/26"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="stCancel">Abbrechen</button>
+      <button class="btn btn-primary" id="stSave">Speichern</button>
+    </div>
+  `);
+  document.getElementById("stCancel").onclick = closeModal;
+  document.getElementById("stSave").onclick = async () => {
+    const name = document.getElementById("stName").value.trim();
+    const schule = document.getElementById("stSchule").value.trim();
+    const schuljahr = document.getElementById("stSchuljahr").value.trim();
+    await window.zwdk.setLehrkraft({ name, schule });
+    await window.zwdk.setSchuljahr(schuljahr);
+    cache.meta = await window.zwdk.getMeta();
+    renderMetaLabels();
+    closeModal();
+  };
+}
 
 function openNewGroupModal() {
   openModal(`

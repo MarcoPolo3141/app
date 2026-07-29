@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("zwdk", {
   getMeta: () => ipcRenderer.invoke("app:getMeta"),
   setLehrkraft: (info) => ipcRenderer.invoke("app:setLehrkraft", info),
+  setSchuljahr: (value) => ipcRenderer.invoke("app:setSchuljahr", value),
 
   listGroups: () => ipcRenderer.invoke("groups:list"),
   getGroup: (id) => ipcRenderer.invoke("groups:get", id),

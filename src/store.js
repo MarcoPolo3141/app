@@ -63,6 +63,12 @@ class Store {
     return this.data.lehrkraft;
   }
 
+  setSchuljahr(value) {
+    this.data.schuljahr = String(value || "").trim() || schuljahrLabel();
+    this.save();
+    return this.data.schuljahr;
+  }
+
   // ---------- Gruppen ----------
   listGroups() {
     return this.data.groups;
