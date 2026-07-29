@@ -1,7 +1,5 @@
 name: Build & sign installers
 
-# Läuft automatisch, wenn ein Versions-Tag gepusht wird (z.B. v1.0.0),
-# und kann zusätzlich manuell über "Run workflow" gestartet werden.
 on:
   push:
     tags:
@@ -16,8 +14,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm ci
+          node-version: 22
+      - run: npm install
       - run: npm test
 
   build-windows:
@@ -28,14 +26,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm ci
+          node-version: 22
+      - run: npm install
       - name: electron-builder (Windows)
         run: npm run dist:win
         env:
-          # Optional: Windows-Codesigning-Zertifikat als Secret hinterlegen.
-          # WIN_CSC_LINK = Base64-codierte .pfx-Datei, WIN_CSC_KEY_PASSWORD = Passwort dazu.
-          # Beide Secrets leer lassen -> es wird unsigniert gebaut (Sicherheitswarnung beim ersten Start).
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
       - uses: actions/upload-artifact@v4
@@ -51,15 +46,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - run: npm ci
+          node-version: 22
+      - run: npm install
       - name: electron-builder (macOS)
         run: npm run dist:mac
         env:
-          # Apple Developer ID Application-Zertifikat als Secret (Base64 .p12) + Passwort.
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          # Für die Notarisierung bei Apple (setzt einen aktiven Apple-Developer-Account voraus).
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
