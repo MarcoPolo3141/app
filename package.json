@@ -1,0 +1,67 @@
+{
+  "name": "zeig-was-du-kannst",
+  "productName": "Zeig, was du kannst!",
+  "version": "1.0.0",
+  "description": "Projektbegleitung für Lehrkräfte: Dokumentation, Reflexion und Bewertung des Projekts \"Zeig, was du kannst!\"",
+  "author": "S. Vetter",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/store.test.js && node test/certificate.test.js && node test/scoring.js",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^43.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  },
+  "build": {
+    "appId": "de.musterschule.zeigwasdukannst",
+    "productName": "Zeig, was du kannst!",
+    "copyright": "© Realschule Musterstadt",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "!test/**/*"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "ZeigWasDuKannst-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Zeig, was du kannst!"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["universal"] },
+        { "target": "zip", "arch": ["universal"] }
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.education",
+      "artifactName": "ZeigWasDuKannst-${version}.${ext}",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "Zeig, was du kannst! ${version}"
+    }
+  }
+}

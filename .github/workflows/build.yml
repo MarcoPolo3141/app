@@ -1,0 +1,88 @@
+name: Build & sign installers
+
+# Läuft automatisch, wenn ein Versions-Tag gepusht wird (z.B. v1.0.0),
+# und kann zusätzlich manuell über "Run workflow" gestartet werden.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    name: Logik-Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm test
+
+  build-windows:
+    name: Windows-Installer bauen & signieren
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: electron-builder (Windows)
+        run: npm run dist:win
+        env:
+          # Optional: Windows-Codesigning-Zertifikat als Secret hinterlegen.
+          # WIN_CSC_LINK = Base64-codierte .pfx-Datei, WIN_CSC_KEY_PASSWORD = Passwort dazu.
+          # Beide Secrets leer lassen -> es wird unsigniert gebaut (Sicherheitswarnung beim ersten Start).
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: release/*.exe
+
+  build-mac:
+    name: macOS-Installer bauen, signieren & notarisieren
+    needs: test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: electron-builder (macOS)
+        run: npm run dist:mac
+        env:
+          # Apple Developer ID Application-Zertifikat als Secret (Base64 .p12) + Passwort.
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          # Für die Notarisierung bei Apple (setzt einen aktiven Apple-Developer-Account voraus).
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-installer
+          path: |
+            release/*.dmg
+            release/*.zip
+
+  release:
+    name: GitHub-Release mit Installern erstellen
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-windows, build-mac]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Release veröffentlichen
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/windows-installer/*.exe
+            dist/mac-installer/*.dmg
+            dist/mac-installer/*.zip
