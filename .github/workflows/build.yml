@@ -19,7 +19,7 @@ jobs:
       - run: npm test
 
   build-windows:
-    name: Windows-Installer bauen & signieren
+    name: Windows-Installer bauen
     needs: test
     runs-on: windows-latest
     steps:
@@ -30,16 +30,13 @@ jobs:
       - run: npm install
       - name: electron-builder (Windows)
         run: npm run dist:win
-        env:
-          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
           path: release/*.exe
 
   build-mac:
-    name: macOS-Installer bauen, signieren & notarisieren
+    name: macOS-Installer bauen
     needs: test
     runs-on: macos-latest
     steps:
@@ -51,12 +48,7 @@ jobs:
       - name: electron-builder (macOS)
         run: npm run dist:mac
         env:
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       - uses: actions/upload-artifact@v4
         with:
           name: mac-installer
