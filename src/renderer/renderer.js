@@ -7,7 +7,7 @@
    "change", zeigen den Wert aber live per "input" an.
 ------------------------------------------------------------------ */
 
-let cache = { meta: null, groups: [] };
+let cache = { meta: null, groups: [], zertifikat: null };
 let state = { view: "dashboard", groupId: null, tab: "anmeldung", student: 0 };
 
 const phaseNames = ["", "Themenwahl & Wissensaneignung", "Durchführung", "Vorstellung des Produkts", "Reflexion"];
@@ -28,18 +28,57 @@ const IMPULSKARTEN = [
   "Eine Herausforderung, die ich/wir meistern musste(n), war …", "Mir/uns ist schwer gefallen …",
 ];
 
+// Vordefinierte Stärken-Kategorien + Textbausteine, die zu einem
+// flüssigen Fließtext für die Bescheinigung zusammengesetzt werden.
+const STAERKEN_KATALOG = [
+  "Kreativität", "Teamarbeit", "Selbstständigkeit", "Sorgfalt", "Kommunikation",
+  "Problemlösefähigkeit", "Fachliches Verständnis", "Präsentationsfähigkeit",
+  "Ausdauer", "Verantwortungsbewusstsein",
+];
+const STAERKEN_BAUSTEINE = {
+  "Kreativität": "eigene, kreative Ideen in die Umsetzung eingebracht",
+  "Teamarbeit": "im Team zuverlässig und kooperativ mitgearbeitet",
+  "Selbstständigkeit": "die Aufgaben weitgehend selbstständig organisiert und bearbeitet",
+  "Sorgfalt": "sorgfältig und gewissenhaft gearbeitet",
+  "Kommunikation": "sich klar und überzeugend ausgedrückt",
+  "Problemlösefähigkeit": "auftretende Probleme eigenständig und lösungsorientiert angegangen",
+  "Fachliches Verständnis": "ein fundiertes fachliches Verständnis gezeigt",
+  "Präsentationsfähigkeit": "das Ergebnis überzeugend und anschaulich präsentiert",
+  "Ausdauer": "auch bei Herausforderungen drangeblieben und durchgehalten",
+  "Verantwortungsbewusstsein": "Verantwortung für die eigenen Aufgaben übernommen",
+};
+
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 function findGroup(id) { return cache.groups.find((g) => g.id === id); }
+function formatNote(n) { return n === undefined || n === null || n === "" ? "" : String(n).replace(".", ","); }
+function gradeBadgeClass(note) {
+  const n = Number(note);
+  if (!isFinite(n)) return "";
+  if (n <= 2.5) return "top";
+  if (n <= 4) return "mid";
+  return "low";
+}
+function buildStaerkenFliesstext(vorname, auswahl, freitext) {
+  const teile = (auswahl || []).map((s) => STAERKEN_BAUSTEINE[s]).filter(Boolean);
+  const extra = (freitext || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const alle = [...teile, ...extra];
+  if (alle.length === 0) return "";
+  let liste;
+  if (alle.length === 1) liste = alle[0];
+  else liste = alle.slice(0, -1).join(", ") + " und " + alle[alle.length - 1];
+  return `${vorname} hat im Projekt vor allem ${liste} gezeigt.`;
+}
 
 /* ---------------- Boot ---------------- */
 async function boot() {
   try {
     if (!window.zwdk) throw new Error("Die Verbindung zum Programm-Kern (zwdk) wurde nicht geladen. Preload-Skript prüfen.");
     cache.meta = await window.zwdk.getMeta();
+    cache.zertifikat = await window.zwdk.getZertifikatSettings();
     renderMetaLabels();
-    document.getElementById("newGroupBtn").onclick = openNewGroupModal;
+    document.getElementById("newGroupBtn").onclick = () => openGroupFormModal(null);
     const sidebarFoot = document.getElementById("sidebarFoot");
     if (sidebarFoot) sidebarFoot.onclick = openSettingsModal;
     await refreshGroups();
@@ -80,7 +119,8 @@ function renderSubnav() {
 
 /* ---------------- Dashboard ---------------- */
 function renderDashboard() {
-  const groups = cache.groups;
+  const groups = cache.groups.filter((g) => !g.archived);
+  const archivedCount = cache.groups.filter((g) => g.archived).length;
   const alertCount = groups.filter((g) => g.status.ampel === "rot").length;
   const warnCount = groups.filter((g) => g.status.ampel === "gelb").length;
   const doneCount = groups.filter((g) => g.status.phase === 4).length;
@@ -97,9 +137,9 @@ function renderDashboard() {
     </div>
     <div class="card">
       <div class="card-head"><h3>Gruppen</h3><span style="font-size:12px;color:var(--ink-faint)">Klicken für Details</span></div>
-      ${groups.length === 0 ? `<div style="padding:40px; text-align:center;" class="empty-hint">Noch keine Gruppen angelegt. Klicke oben rechts auf „+ Neue Gruppe“.</div>` : `
+      ${groups.length === 0 ? `<div style="padding:40px; text-align:center;" class="empty-hint">Noch keine Gruppen angelegt. Klicke oben rechts auf „+ Neue Gruppe".</div>` : `
       <table class="glist">
-        <thead><tr><th>Gruppe</th><th>Fach</th><th>Phase</th><th>Status</th><th>Letzte Aktivität</th><th></th></tr></thead>
+        <thead><tr><th>Gruppe</th><th>Fach</th><th>Phase</th><th>Status</th><th>Abgabe</th><th></th></tr></thead>
         <tbody>
           ${groups.map((g) => `
           <tr class="grow" data-open="${g.id}">
@@ -110,8 +150,46 @@ function renderDashboard() {
               <div class="gmeta" style="margin-top:5px;">${phaseNames[g.status.phase]}</div>
             </td>
             <td><span class="ampel ${g.status.ampel}"><span class="dot"></span>${ampelLabel[g.status.ampel]}</span></td>
-            <td class="gmeta">vor ${g.status.letzteAktivitaetTage} Tag${g.status.letzteAktivitaetTage === 1 ? "" : "en"}</td>
+            <td class="gmeta">${abgabeText(g.status)}</td>
             <td><span class="ms-del" data-delete-group="${g.id}" title="Gruppe löschen">✕</span></td>
+          </tr>`).join("")}
+        </tbody>
+      </table>`}
+      ${archivedCount > 0 ? `<div style="padding:12px 18px; border-top:1px solid var(--border);"><span data-view-link="archiv" style="cursor:pointer; font-size:12.5px; color:var(--ink-soft); text-decoration:underline;">Archiv ansehen (${archivedCount})</span></div>` : ""}
+    </div>
+  </div>`;
+}
+
+function abgabeText(status) {
+  if (status.tageBisAbgabe === null || status.tageBisAbgabe === undefined) return "kein Termin";
+  if (status.tageBisAbgabe < 0) return "Termin überschritten";
+  if (status.tageBisAbgabe === 0) return "heute fällig";
+  return `noch ${status.tageBisAbgabe} Tag${status.tageBisAbgabe === 1 ? "" : "e"}`;
+}
+
+/* ---------------- Archiv ---------------- */
+function renderArchiv() {
+  const groups = cache.groups.filter((g) => g.archived);
+  return `
+  <div class="view">
+    <div class="page-head">
+      <div><h1>Archiv</h1><p>Abgeschlossene Gruppen aus vergangenen Schuljahren</p></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>Archivierte Gruppen</h3></div>
+      ${groups.length === 0 ? `<div style="padding:40px; text-align:center;" class="empty-hint">Noch keine Gruppen archiviert.</div>` : `
+      <table class="glist">
+        <thead><tr><th>Gruppe</th><th>Fach</th><th>Note(n)</th><th></th></tr></thead>
+        <tbody>
+          ${groups.map((g) => `
+          <tr class="grow" data-open="${g.id}">
+            <td><div class="gname">${esc(g.name)}</div><div class="gmeta">${esc(g.members.join(", "))}</div></td>
+            <td><span class="fach-pill">${esc(g.fach || "–")}</span></td>
+            <td class="gmeta">${g.members.map((m) => formatNote((g.reflexion[m] || {}).note)).filter(Boolean).join(", ") || "–"}</td>
+            <td>
+              <span class="ms-del" data-restore-group="${g.id}" title="Aus Archiv zurückholen">↺</span>
+              <span class="ms-del" data-delete-group="${g.id}" title="Endgültig löschen">✕</span>
+            </td>
           </tr>`).join("")}
         </tbody>
       </table>`}
@@ -135,7 +213,12 @@ function renderGroup() {
           <div class="members">${g.members.map((m) => `<span class="member-chip">${esc(m)}</span>`).join("")}</div>
         </div>
       </div>
-      <span class="ampel ${g.status.ampel}"><span class="dot"></span>${ampelLabel[g.status.ampel]}</span>
+      <div class="gp-actions">
+        <button class="btn btn-ghost btn-sm" id="editGroupBtn">Bearbeiten</button>
+        <button class="btn btn-ghost btn-sm" id="archiveGroupBtn">${g.archived ? "Aus Archiv zurückholen" : "Archivieren"}</button>
+        ${g.status.tageBisAbgabe !== null && g.status.tageBisAbgabe !== undefined ? `<span class="fach-pill">${abgabeText(g.status)}</span>` : ""}
+        <span class="ampel ${g.status.ampel}"><span class="dot"></span>${ampelLabel[g.status.ampel]}</span>
+      </div>
     </div>
     <div class="tabs">
       ${["anmeldung", "durchfuehrung", "praesentation", "reflexion", "bewertung"].map((id, i) => {
@@ -285,6 +368,7 @@ function tabReflexion(g) {
   const rec = g.reflexion[student] || {};
   const selbst = rec.selbst || {};
   const fremd = rec.fremd || {};
+  const auswahl = rec.staerkenAuswahl || [];
   const cats = [
     ["Produkt aus der Lebenswelt", [["ideenentwicklung", "Ideenentwicklung"], ["information", "Umgang mit Informationen"], ["struktur", "Struktur & Darstellung"]]],
     ["Projektorientiertes Arbeiten", [["projektorg", "Projektorganisation"]]],
@@ -320,8 +404,16 @@ function tabReflexion(g) {
   </div>
   <div class="card" style="padding:20px; margin-top:16px;">
     <div class="section-title">Gesprächsnotizen – ${esc(student)}</div>
-    <div class="field-row"><label>Diese Stärken konnte ${esc(student.split(" ")[0])} zeigen</label><textarea data-refl-field="staerken">${esc(rec.staerken)}</textarea></div>
     <div class="field-row"><label>Diesen Tipp gebe ich mit</label><textarea data-refl-field="tipp">${esc(rec.tipp)}</textarea></div>
+  </div>
+  <div class="card" style="padding:20px; margin-top:16px;">
+    <div class="section-title">Stärken für die Bescheinigung</div>
+    <div class="staerken-chips">${STAERKEN_KATALOG.map((s) => `<span class="staerke-chip ${auswahl.includes(s) ? "sel" : ""}" data-staerke-toggle="${esc(s)}">${esc(s)}</span>`).join("")}</div>
+    <div class="field-row" style="margin-top:12px;"><label>Weitere Stärken (frei, komma-getrennt)</label><textarea data-refl-field="staerken">${esc(rec.staerken)}</textarea></div>
+    <div class="field-row">
+      <label>Fließtext für die Bescheinigung <span class="btn btn-ghost btn-sm" id="genStaerkenText" style="margin-left:8px;">Text aus Auswahl erzeugen</span></label>
+      <textarea data-refl-field="staerkenText" style="min-height:90px;">${esc(rec.staerkenText)}</textarea>
+    </div>
   </div>`;
 }
 
@@ -366,7 +458,7 @@ function tabBewertung(g) {
     <div class="card" style="padding:20px;">
       <div class="section-title">Punkteübersicht (50 P gesamt)</div>
       <div class="score-donut-wrap">
-        <div class="grade-badge"><div class="g">${note}</div><div class="p">${scores.pct}%</div></div>
+        <div class="grade-badge ${gradeBadgeClass(note)}"><div class="g">${formatNote(note)}</div><div class="p">${scores.pct}%</div></div>
         <div class="score-bars">
           ${bar("Anmeldeformular", scores.anmeldung, 10)}
           ${bar("Fachlicher Teil (25% Fachnote)", scores.fach, 10)}
@@ -377,8 +469,8 @@ function tabBewertung(g) {
       <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:14px; border-top:1px solid var(--border);">
         <b>Gesamt</b><b style="font-size:17px;">${scores.gesamt} / 50 P</b>
       </div>
-      <div class="field-row" style="margin-top:14px;"><label>Note (Vorschlag: ${scores.noteVorschlag}) – anpassbar</label>
-        <input type="number" min="1" max="6" step="1" value="${note}" data-refl-field="note" style="width:90px;">
+      <div class="field-row" style="margin-top:14px;"><label>Note (Vorschlag: ${scores.noteVorschlag}) – anpassbar, Dezimalstellen möglich</label>
+        <input type="number" min="1" max="6" step="0.1" value="${note}" data-refl-field="note" style="width:90px;">
       </div>
       <div class="field-row"><label>Begründung</label><textarea data-refl-field="begruendung">${esc(rec.begruendung)}</textarea></div>
     </div>
@@ -386,11 +478,12 @@ function tabBewertung(g) {
       <div class="cert-inner">
         <div style="font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint); font-weight:700;">Bescheinigung – Vorschau</div>
         <h2>${esc(student)}</h2>
-        <div class="cert-sub">Projekt „Zeig, was du kannst!“ ${g.thema ? "· " + esc(g.thema) : ""}</div>
+        <div class="cert-sub">Projekt „Zeig, was du kannst!" ${g.thema ? "· " + esc(g.thema) : ""}</div>
         <div class="cert-line">Note</div>
-        <div class="cert-value">${note} (${scores.gesamt} von 50 Punkten)</div>
+        <div class="cert-value">${formatNote(note)} (${scores.gesamt} von 50 Punkten)</div>
         <div class="cert-line">Gezeigte Stärken</div>
         <div class="cert-strengths">${(rec.staerken || "").split(",").map((s) => s.trim()).filter(Boolean).map((s) => `<span class="strength-tag">${esc(s)}</span>`).join("") || '<span class="empty-hint">Noch keine Stärken in Phase 4 eingetragen.</span>'}</div>
+        ${rec.staerkenText ? `<div class="cert-line">Fließtext</div><div style="font-size:12.5px; color:var(--ink-soft); margin-top:4px; line-height:1.5;">${esc(rec.staerkenText)}</div>` : ""}
         <button class="btn btn-yellow" style="margin-top:22px;" id="genCertBtn">Bescheinigung als PDF erzeugen</button>
       </div>
     </div>
@@ -398,7 +491,8 @@ function tabBewertung(g) {
 }
 function bar(label, val, max) {
   const p = Math.round((val / max) * 100);
-  return `<div class="sb-row"><div class="sb-top"><span>${label}</span><b>${val} / ${max}</b></div><div class="sb-track"><div class="sb-fill" style="width:${p}%;"></div></div></div>`;
+  const cls = p >= 80 ? "good" : p >= 50 ? "mid" : "low";
+  return `<div class="sb-row"><div class="sb-top"><span>${label}</span><b>${val} / ${max}</b></div><div class="sb-track"><div class="sb-fill ${cls}" style="width:${p}%;"></div></div></div>`;
 }
 
 /* ---------------- Modals ---------------- */
@@ -412,58 +506,111 @@ function closeModal() { document.getElementById("modalBackdrop").classList.remov
 
 function openSettingsModal() {
   const m = cache.meta;
+  const z = cache.zertifikat || { farbe: "#FFED00", layout: "klassisch", logoPath: "" };
   openModal(`
     <h2>Einstellungen</h2>
     <div class="field-row"><label>Name der Lehrkraft</label><input type="text" id="stName" value="${esc(m.lehrkraft.name)}"></div>
     <div class="field-row"><label>Name der Schule</label><input type="text" id="stSchule" value="${esc(m.lehrkraft.schule)}"></div>
     <div class="field-row"><label>Schuljahr</label><input type="text" id="stSchuljahr" value="${esc(m.schuljahr)}" placeholder="z.B. 2025/26"></div>
+    <div class="section-title" style="margin-top:18px;">Bescheinigung / Zertifikat</div>
+    <div class="field-row"><label>Akzentfarbe</label><input type="color" id="stFarbe" value="${esc(z.farbe || "#FFED00")}" style="height:38px; padding:4px;"></div>
+    <div class="field-row"><label>Layout</label>
+      <select id="stLayout">
+        <option value="klassisch" ${z.layout === "klassisch" ? "selected" : ""}>Klassisch</option>
+        <option value="modern" ${z.layout === "modern" ? "selected" : ""}>Modern (Farbakzent groß)</option>
+      </select>
+    </div>
+    <div class="field-row"><label>Schullogo</label>
+      <div style="display:flex; align-items:center; gap:10px;">
+        ${z.logoPath ? `<span class="fach-pill">Logo hinterlegt</span>` : `<span class="empty-hint" style="padding:0;">Kein Logo hinterlegt</span>`}
+        <span class="btn btn-ghost btn-sm" id="stLogoChoose">Logo auswählen …</span>
+        ${z.logoPath ? `<span class="btn btn-ghost btn-sm" id="stLogoRemove">Entfernen</span>` : ""}
+      </div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="stCancel">Abbrechen</button>
       <button class="btn btn-primary" id="stSave">Speichern</button>
     </div>
   `);
   document.getElementById("stCancel").onclick = closeModal;
+  const logoChoose = document.getElementById("stLogoChoose");
+  if (logoChoose) logoChoose.onclick = async () => {
+    cache.zertifikat = await window.zwdk.chooseLogo();
+    openSettingsModal();
+  };
+  const logoRemove = document.getElementById("stLogoRemove");
+  if (logoRemove) logoRemove.onclick = async () => {
+    cache.zertifikat = await window.zwdk.removeLogo();
+    openSettingsModal();
+  };
   document.getElementById("stSave").onclick = async () => {
     const name = document.getElementById("stName").value.trim();
     const schule = document.getElementById("stSchule").value.trim();
     const schuljahr = document.getElementById("stSchuljahr").value.trim();
+    const farbe = document.getElementById("stFarbe").value;
+    const layout = document.getElementById("stLayout").value;
     await window.zwdk.setLehrkraft({ name, schule });
     await window.zwdk.setSchuljahr(schuljahr);
+    await window.zwdk.setZertifikatFarbe(farbe);
+    cache.zertifikat = await window.zwdk.setZertifikatLayout(layout);
     cache.meta = await window.zwdk.getMeta();
     renderMetaLabels();
     closeModal();
   };
 }
 
-function openNewGroupModal() {
+function openGroupFormModal(existing) {
+  const g = existing || { name: "", fach: "", fachlehrkraft: "", thema: "", produkt: "", members: [], zeitplan: { abgabetermin: "", wochenBisPhase: { 2: 3, 3: 6, 4: 9 } } };
+  const zp = g.zeitplan || { abgabetermin: "", wochenBisPhase: { 2: 3, 3: 6, 4: 9 } };
+  const w = zp.wochenBisPhase || {};
   openModal(`
-    <h2>Neue Gruppe anlegen</h2>
-    <div class="field-row"><label>Gruppenname</label><input type="text" id="ngName" placeholder="z.B. Team RoboArm"></div>
-    <div class="field-row"><label>Fach</label><input type="text" id="ngFach" placeholder="z.B. NWT"></div>
-    <div class="field-row"><label>Fachlehrkraft</label><input type="text" id="ngFachlehrkraft"></div>
-    <div class="field-row"><label>Thema</label><input type="text" id="ngThema"></div>
-    <div class="field-row"><label>Geplantes Produkt</label><input type="text" id="ngProdukt"></div>
-    <div class="field-row"><label>Mitglieder (Komma-getrennt)</label><input type="text" id="ngMembers" placeholder="Lena Bauer, Finn Weber, Mia Hoffmann"></div>
+    <h2>${existing ? "Gruppe bearbeiten" : "Neue Gruppe anlegen"}</h2>
+    <div class="field-row"><label>Gruppenname</label><input type="text" id="ngName" value="${esc(g.name)}" placeholder="z.B. Team RoboArm"></div>
+    <div class="field-row"><label>Fach</label><input type="text" id="ngFach" value="${esc(g.fach)}" placeholder="z.B. NWT"></div>
+    <div class="field-row"><label>Fachlehrkraft</label><input type="text" id="ngFachlehrkraft" value="${esc(g.fachlehrkraft)}"></div>
+    <div class="field-row"><label>Thema</label><input type="text" id="ngThema" value="${esc(g.thema)}"></div>
+    <div class="field-row"><label>Geplantes Produkt</label><input type="text" id="ngProdukt" value="${esc(g.produkt)}"></div>
+    <div class="field-row"><label>Mitglieder (Komma-getrennt)</label><input type="text" id="ngMembers" value="${esc((g.members || []).join(", "))}" placeholder="Lena Bauer, Finn Weber, Mia Hoffmann"></div>
+    <div class="section-title" style="margin-top:18px;">Zeitplan & Abgabetermin</div>
+    <div class="field-row"><label>Abgabetermin dieser Gruppe</label><input type="text" id="ngAbgabe" value="${esc(zp.abgabetermin)}" placeholder="TT.MM.JJJJ"></div>
+    <div class="field-row"><label>Nach wie vielen Wochen sollte Phase 2 (Durchführung) erreicht sein?</label><input type="number" min="0" step="1" id="ngW2" value="${w[2] ?? 3}"></div>
+    <div class="field-row"><label>Nach wie vielen Wochen sollte Phase 3 (Präsentation) erreicht sein?</label><input type="number" min="0" step="1" id="ngW3" value="${w[3] ?? 6}"></div>
+    <div class="field-row"><label>Nach wie vielen Wochen sollte Phase 4 (Reflexion) erreicht sein?</label><input type="number" min="0" step="1" id="ngW4" value="${w[4] ?? 9}"></div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="ngCancel">Abbrechen</button>
-      <button class="btn btn-primary" id="ngSave">Anlegen</button>
+      <button class="btn btn-primary" id="ngSave">${existing ? "Speichern" : "Anlegen"}</button>
     </div>
   `);
   document.getElementById("ngCancel").onclick = closeModal;
   document.getElementById("ngSave").onclick = async () => {
     const name = document.getElementById("ngName").value.trim() || "Neue Gruppe";
     const members = document.getElementById("ngMembers").value.split(",").map((s) => s.trim()).filter(Boolean);
-    const g = await window.zwdk.createGroup({
+    const payload = {
       name, fach: document.getElementById("ngFach").value.trim(),
       fachlehrkraft: document.getElementById("ngFachlehrkraft").value.trim(),
       thema: document.getElementById("ngThema").value.trim(),
       produkt: document.getElementById("ngProdukt").value.trim(),
       members,
-    });
-    closeModal();
-    await refreshGroups();
-    state.view = "group"; state.groupId = g.id; state.tab = "anmeldung"; state.student = 0;
-    render();
+    };
+    const zeitplan = {
+      abgabetermin: document.getElementById("ngAbgabe").value.trim(),
+      wochenBisPhase: {
+        2: parseFloat(document.getElementById("ngW2").value || "3"),
+        3: parseFloat(document.getElementById("ngW3").value || "6"),
+        4: parseFloat(document.getElementById("ngW4").value || "9"),
+      },
+    };
+    if (existing) {
+      await window.zwdk.updateGroup(existing.id, { ...payload, zeitplan });
+      closeModal();
+      await refreshGroups(); render();
+    } else {
+      const created = await window.zwdk.createGroup({ ...payload, zeitplan });
+      closeModal();
+      await refreshGroups();
+      state.view = "group"; state.groupId = created.id; state.tab = "anmeldung"; state.student = 0;
+      render();
+    }
   };
 }
 
@@ -533,6 +680,7 @@ function render() {
   document.querySelectorAll(".nav-item[data-view]").forEach((n) => n.classList.toggle("active", n.dataset.view === state.view));
 
   if (state.view === "dashboard") { content.innerHTML = renderDashboard(); crumb.innerHTML = "Übersicht"; }
+  else if (state.view === "archiv") { content.innerHTML = renderArchiv(); crumb.innerHTML = "Archiv"; }
   else if (state.view === "group") {
     content.innerHTML = renderGroup();
     const g = findGroup(state.groupId);
@@ -548,9 +696,10 @@ function render() {
 function bindEvents() {
   // Navigation
   document.querySelectorAll(".nav-item[data-view]").forEach((n) => (n.onclick = () => { state.view = n.dataset.view; render(); }));
+  document.querySelectorAll("[data-view-link]").forEach((n) => (n.onclick = () => { state.view = n.dataset.viewLink; render(); }));
   document.querySelectorAll("[data-tab]").forEach((n) => (n.onclick = () => { state.tab = n.dataset.tab; render(); }));
   document.querySelectorAll("[data-open]").forEach((n) => (n.onclick = (e) => {
-    if (e.target.closest("[data-delete-group]")) return;
+    if (e.target.closest("[data-delete-group]") || e.target.closest("[data-restore-group]")) return;
     state.view = "group"; state.groupId = n.dataset.open; state.tab = "anmeldung"; state.student = 0; render();
   }));
   document.querySelectorAll("[data-delete-group]").forEach((n) => (n.onclick = async (e) => {
@@ -559,7 +708,22 @@ function bindEvents() {
     await window.zwdk.deleteGroup(n.dataset.deleteGroup);
     await refreshGroups(); render();
   }));
+  document.querySelectorAll("[data-restore-group]").forEach((n) => (n.onclick = async (e) => {
+    e.stopPropagation();
+    await window.zwdk.updateGroup(n.dataset.restoreGroup, { archived: false });
+    await refreshGroups(); render();
+  }));
   document.querySelectorAll("[data-stu]").forEach((n) => (n.onclick = () => { state.student = parseInt(n.dataset.stu); render(); }));
+
+  // Gruppenkopf: Bearbeiten / Archivieren
+  const editBtn = document.getElementById("editGroupBtn");
+  if (editBtn) editBtn.onclick = () => openGroupFormModal(findGroup(state.groupId));
+  const archBtn = document.getElementById("archiveGroupBtn");
+  if (archBtn) archBtn.onclick = async () => {
+    const g = findGroup(state.groupId);
+    await window.zwdk.updateGroup(g.id, { archived: !g.archived });
+    await refreshGroups(); render();
+  };
 
   // Modals
   const addMs = document.getElementById("addMilestone"); if (addMs) addMs.onclick = openMilestoneModal;
@@ -631,6 +795,28 @@ function bindEvents() {
     }));
   });
 
+  // Stärken-Kategorien (Chips) + Fließtext-Generator
+  document.querySelectorAll("[data-staerke-toggle]").forEach((n) => (n.onclick = async () => {
+    const g = findGroup(state.groupId);
+    const student = g.members[state.student];
+    const rec = { ...(g.reflexion[student] || {}) };
+    const list = new Set(rec.staerkenAuswahl || []);
+    const s = n.dataset.staerkeToggle;
+    if (list.has(s)) list.delete(s); else list.add(s);
+    rec.staerkenAuswahl = Array.from(list);
+    await window.zwdk.updateGroup(g.id, { reflexion: { [student]: rec } });
+    await refreshGroups(); render();
+  }));
+  const genStaerkenBtn = document.getElementById("genStaerkenText");
+  if (genStaerkenBtn) genStaerkenBtn.onclick = async () => {
+    const g = findGroup(state.groupId);
+    const student = g.members[state.student];
+    const rec = { ...(g.reflexion[student] || {}) };
+    rec.staerkenText = buildStaerkenFliesstext(student.split(" ")[0], rec.staerkenAuswahl || [], rec.staerken || "");
+    await window.zwdk.updateGroup(g.id, { reflexion: { [student]: rec } });
+    await refreshGroups(); render();
+  };
+
   // Bescheinigung erzeugen
   const genCert = document.getElementById("genCertBtn");
   if (genCert) genCert.onclick = async () => {
@@ -646,6 +832,7 @@ function bindEvents() {
       schueler: student,
       titel: g.thema,
       staerken: rec.staerken || "",
+      staerkenText: rec.staerkenText || "",
       note,
       punkte: { anmeldung: scores.anmeldung, fach: scores.fach, produkt: scores.produkt, reflexion: scores.reflexion, gesamt: scores.gesamt },
       lehrkraft: cache.meta.lehrkraft.name || "",

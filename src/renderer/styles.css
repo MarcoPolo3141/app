@@ -135,7 +135,8 @@ h1,h2,h3{font-family:Georgia,"Times New Roman",serif; margin:0; letter-spacing:-
 .step.done{background:var(--ink);}
 .step.now{background:var(--yellow);}
 
-.gp-head{display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:18px;}
+.gp-head{display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:18px; gap:14px; flex-wrap:wrap;}
+.gp-actions{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
 .gp-title{display:flex; align-items:center; gap:12px;}
 .gp-icon{width:44px;height:44px; border-radius:12px; background:var(--yellow); display:flex; align-items:center; justify-content:center; font-family:Georgia,serif; font-weight:700; font-size:17px; flex-shrink:0;}
 .gp-title h1{font-size:22px;}
@@ -227,11 +228,25 @@ input[type=range]{flex:1; accent-color:var(--ink); height:5px;}
 .sb-top{display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:5px;}
 .sb-top b{font-weight:700;}
 .sb-track{height:9px; background:var(--bg); border-radius:20px; overflow:hidden; border:1px solid var(--border);}
-.sb-fill{height:100%; border-radius:20px; background:var(--ink);}
+.sb-fill{height:100%; border-radius:20px; background:var(--ink); transition:width 400ms var(--ease-out);}
+.sb-fill.good{background:var(--green);}
+.sb-fill.mid{background:var(--amber);}
+.sb-fill.low{background:var(--red);}
 
-.grade-badge{width:96px;height:96px;border-radius:50%; background:var(--yellow); display:flex; flex-direction:column; align-items:center; justify-content:center; flex-shrink:0;}
-.grade-badge .g{font-family:Georgia,serif; font-size:30px; font-weight:700; line-height:1;}
-.grade-badge .p{font-size:10.5px; font-weight:600; margin-top:2px;}
+.grade-badge{width:96px;height:96px;border-radius:50%; background:var(--yellow); display:flex; flex-direction:column; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 6px 18px rgba(0,0,0,.08);}
+.grade-badge .g{font-family:Georgia,serif; font-size:32px; font-weight:700; line-height:1;}
+.grade-badge .p{font-size:10.5px; font-weight:600; margin-top:3px; opacity:.75;}
+.grade-badge.top{background:var(--green-bg);}
+.grade-badge.top .g{color:var(--green);}
+.grade-badge.mid{background:var(--amber-bg);}
+.grade-badge.mid .g{color:var(--amber);}
+.grade-badge.low{background:var(--red-bg);}
+.grade-badge.low .g{color:var(--red);}
+
+.staerken-chips{display:flex; flex-wrap:wrap; gap:8px;}
+.staerke-chip{font-size:12px; font-weight:600; padding:7px 13px; border-radius:20px; background:var(--bg); border:1px solid var(--border); color:var(--ink-soft); cursor:pointer; transition:background 140ms ease-out, color 140ms ease-out, border-color 140ms ease-out;}
+.staerke-chip:hover{border-color:var(--ink-faint);}
+.staerke-chip.sel{background:var(--ink); color:var(--yellow); border-color:var(--ink);}
 
 .cert-preview{background:#fbfaf5; border:1px solid var(--border); border-radius:16px; padding:34px 38px; position:relative; overflow:hidden;}
 .cert-preview::before{content:""; position:absolute; top:-40px; right:-40px; width:160px; height:160px; background:var(--yellow); border-radius:50%; opacity:.5;}

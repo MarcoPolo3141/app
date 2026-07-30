@@ -7,12 +7,14 @@ const path = require("path");
 const crypto = require("crypto");
 
 const CURRENT_VERSION = 1;
+const DEFAULT_WOCHEN = { 2: 3, 3: 6, 4: 9 };
 
 function defaultData() {
   return {
     version: CURRENT_VERSION,
     schuljahr: schuljahrLabel(),
     lehrkraft: { name: "", schule: "" },
+    zertifikat: { farbe: "#FFED00", layout: "klassisch", logoPath: "" },
     groups: [],
   };
 }
@@ -37,7 +39,13 @@ class Store {
       if (fs.existsSync(this.file)) {
         const raw = fs.readFileSync(this.file, "utf-8");
         const parsed = JSON.parse(raw);
-        return { ...defaultData(), ...parsed };
+        const merged = { ...defaultData(), ...parsed };
+        // Verschachtelte Objekte gezielt zusammenführen, damit neu hinzugekommene
+        // Standardwerte (z.B. neue Zertifikat-Einstellungen) nicht verloren gehen,
+        // wenn eine ältere Datenbasis geladen wird.
+        merged.lehrkraft = { ...defaultData().lehrkraft, ...(parsed.lehrkraft || {}) };
+        merged.zertifikat = { ...defaultData().zertifikat, ...(parsed.zertifikat || {}) };
+        return merged;
       }
     } catch (e) {
       // Beschädigte Datei: Backup wegsichern statt Daten zu verlieren
@@ -69,6 +77,13 @@ class Store {
     return this.data.schuljahr;
   }
 
+  // ---------- Zertifikat / Bescheinigung ----------
+  setZertifikatSettings(patch) {
+    this.data.zertifikat = { ...this.data.zertifikat, ...patch };
+    this.save();
+    return this.data.zertifikat;
+  }
+
   // ---------- Gruppen ----------
   listGroups() {
     return this.data.groups;
@@ -79,6 +94,7 @@ class Store {
   }
 
   createGroup(payload) {
+    const zpIn = payload.zeitplan || {};
     const g = {
       id: crypto.randomUUID(),
       name: payload.name || "Neue Gruppe",
@@ -89,6 +105,12 @@ class Store {
       members: payload.members || [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      archived: false,
+      zeitplan: {
+        start: zpIn.start || new Date().toISOString(),
+        abgabetermin: zpIn.abgabetermin || "",
+        wochenBisPhase: { ...DEFAULT_WOCHEN, ...(zpIn.wochenBisPhase || {}) },
+      },
       anmeldung: {
         beschreibung: "",
         meilensteine: [],
@@ -105,7 +127,7 @@ class Store {
         sinnhaftigkeit: 0, tiefe: 0, richtigkeit: 0,
         rueckfragenNotiz: "",
       },
-      reflexion: {}, // je Mitgliedsname: { selbst:{}, fremd:{}, staerken, tipp, note, begruendung }
+      reflexion: {}, // je Mitgliedsname: { selbst:{}, fremd:{}, staerken, staerkenAuswahl, staerkenText, tipp, note, begruendung }
     };
     this.data.groups.push(g);
     this.save();
@@ -137,10 +159,49 @@ class Store {
     const days = Math.floor((Date.now() - last.getTime()) / (1000 * 60 * 60 * 24));
 
     const phase = this.computePhase(g);
+
+    // Erwartete Phase anhand des individuellen Zeitplans (falls konfiguriert).
+    const zp = g.zeitplan || {};
+    const wochen = zp.wochenBisPhase || {};
+    const wochenEintraege = Object.entries(wochen).filter(
+      ([, w]) => w !== "" && w !== null && w !== undefined && !isNaN(Number(w))
+    );
+    let erwartetePhase = null;
+    if (wochenEintraege.length) {
+      const start = zp.start ? parseDate(zp.start) : new Date(g.createdAt);
+      const elapsedWeeks = (Date.now() - start.getTime()) / (1000 * 60 * 60 * 24 * 7);
+      erwartetePhase = 1;
+      for (const [ph, w] of wochenEintraege.sort((a, b) => Number(a[1]) - Number(b[1]))) {
+        if (elapsedWeeks >= Number(w)) erwartetePhase = Math.max(erwartetePhase, Number(ph));
+      }
+    }
+
+    // Tage bis zum individuellen Abgabetermin (falls gesetzt).
+    let tageBisAbgabe = null;
+    if (zp.abgabetermin) {
+      const due = parseDate(zp.abgabetermin);
+      if (due.getTime() > 0) {
+        tageBisAbgabe = Math.ceil((due.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      }
+    }
+
     let ampel = "gruen";
-    if (phase >= 1 && phase <= 3 && days >= 21) ampel = "rot";
-    else if (phase >= 1 && phase <= 3 && (days >= 10 || g.durchfuehrung.beratung.status === "ueberfaellig")) ampel = "gelb";
-    return { letzteAktivitaetTage: days, ampel, phase };
+    if (erwartetePhase !== null) {
+      const rueckstand = erwartetePhase - phase;
+      if (rueckstand >= 2) ampel = "rot";
+      else if (rueckstand === 1) ampel = "gelb";
+    } else if (phase >= 1 && phase <= 3 && days >= 21) {
+      ampel = "rot";
+    } else if (phase >= 1 && phase <= 3 && (days >= 10 || g.durchfuehrung.beratung.status === "ueberfaellig")) {
+      ampel = "gelb";
+    }
+
+    if (tageBisAbgabe !== null && phase < 4) {
+      if (tageBisAbgabe <= 7) ampel = "rot";
+      else if (tageBisAbgabe <= 14 && ampel === "gruen") ampel = "gelb";
+    }
+
+    return { letzteAktivitaetTage: days, ampel, phase, tageBisAbgabe, erwartetePhase };
   }
 
   computePhase(g) {

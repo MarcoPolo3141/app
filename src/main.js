@@ -140,6 +140,32 @@ ipcMain.handle("app:setLehrkraft", (e, info) => store.setLehrkraft(info));
 
 ipcMain.handle("app:setSchuljahr", (e, value) => store.setSchuljahr(value));
 
+ipcMain.handle("app:getZertifikatSettings", () => store.data.zertifikat);
+ipcMain.handle("app:setZertifikatFarbe", (e, farbe) => store.setZertifikatSettings({ farbe }));
+ipcMain.handle("app:setZertifikatLayout", (e, layout) => store.setZertifikatSettings({ layout }));
+
+ipcMain.handle("app:chooseLogo", async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: "Schullogo auswählen",
+    filters: [{ name: "Bilder", extensions: ["png", "jpg", "jpeg"] }],
+    properties: ["openFile"],
+  });
+  if (canceled || !filePaths[0]) return store.data.zertifikat;
+  try {
+    const ext = path.extname(filePaths[0]).toLowerCase() || ".png";
+    const destDir = path.join(app.getPath("userData"), "assets");
+    fs.mkdirSync(destDir, { recursive: true });
+    const dest = path.join(destDir, "schullogo" + ext);
+    fs.copyFileSync(filePaths[0], dest);
+    return store.setZertifikatSettings({ logoPath: dest });
+  } catch (e) {
+    dialog.showMessageBox(mainWindow, { type: "warning", title: "Logo konnte nicht übernommen werden", message: String(e) });
+    return store.data.zertifikat;
+  }
+});
+
+ipcMain.handle("app:removeLogo", () => store.setZertifikatSettings({ logoPath: "" }));
+
 ipcMain.handle("groups:list", () => store.listGroups().map((g) => ({ ...g, status: store.computeStatus(g) })));
 
 ipcMain.handle("groups:get", (e, id) => {
@@ -157,7 +183,8 @@ ipcMain.handle("groups:delete", (e, id) => {
 });
 
 ipcMain.handle("cert:generate", async (e, payload) => {
-  const bytes = await buildCertificatePdf(payload);
+  const z = store.data.zertifikat || {};
+  const bytes = await buildCertificatePdf({ ...payload, farbe: z.farbe, layout: z.layout, logoPath: z.logoPath });
   const safeName = (payload.schueler || "Bescheinigung").replace(/[\\/:*?"<>|]/g, "_");
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
     title: "Bescheinigung speichern",
