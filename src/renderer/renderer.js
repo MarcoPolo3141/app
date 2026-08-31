@@ -7,11 +7,12 @@
    "change", zeigen den Wert aber live per "input" an.
 ------------------------------------------------------------------ */
 
-let cache = { meta: null, groups: [], zertifikat: null };
+let cache = { meta: null, groups: [], zertifikat: null, katalog: [] };
 let state = { view: "dashboard", groupId: null, tab: "anmeldung", student: 0 };
 
 const phaseNames = ["", "Themenwahl & Wissensaneignung", "Durchführung", "Vorstellung des Produkts", "Reflexion"];
 const ampelLabel = { gruen: "im Plan", gelb: "Beratung fällig", rot: "braucht Aufmerksamkeit" };
+const PHASE_LABEL = { anmeldung: "Anmeldung", praesentation: "Präsentation", reflexion: "Reflexion" };
 
 const LEITFRAGEN = [
   "Wie zufrieden bist du insgesamt mit eurem Projekt?",
@@ -71,12 +72,25 @@ function buildStaerkenFliesstext(vorname, auswahl, freitext) {
   return `${vorname} hat im Projekt vor allem ${liste} gezeigt.`;
 }
 
+/* ---------------- Kriterienkatalog: Hilfsfunktionen ---------------- */
+function activeKriterien(g, phase, katalog) {
+  const ids = new Set((g.aktivKriterien && g.aktivKriterien[phase]) || []);
+  return (katalog || []).filter((k) => k.phase === phase && ids.has(k.id));
+}
+function zusatzScore(rec, list) {
+  const z = (rec && rec.zusatz) || {};
+  let sum = 0, max = 0;
+  for (const k of list) { sum += Number(z[k.id] || 0); max += Number(k.max || 0); }
+  return { sum, max };
+}
+
 /* ---------------- Boot ---------------- */
 async function boot() {
   try {
     if (!window.zwdk) throw new Error("Die Verbindung zum Programm-Kern (zwdk) wurde nicht geladen. Preload-Skript prüfen.");
     cache.meta = await window.zwdk.getMeta();
     cache.zertifikat = await window.zwdk.getZertifikatSettings();
+    cache.katalog = await window.zwdk.listKriterien();
     renderMetaLabels();
     document.getElementById("newGroupBtn").onclick = () => openGroupFormModal(null);
     const sidebarFoot = document.getElementById("sidebarFoot");
@@ -101,6 +115,7 @@ function renderMetaLabels() {
   document.getElementById("avatarInitials").textContent = (cache.meta.lehrkraft.name || "L").slice(0, 2).toUpperCase();
 }
 async function refreshGroups() { cache.groups = await window.zwdk.listGroups(); }
+async function refreshKatalog() { cache.katalog = await window.zwdk.listKriterien(); }
 
 /* ---------------- Sidebar subnav ---------------- */
 function renderSubnav() {
@@ -240,9 +255,48 @@ function renderTab(g) {
   return "";
 }
 
+/* ---------------- Gemeinsame Bausteine: Schüler-Bewertung ---------------- */
+function critRowStu(phase, label, val, max, key, step = 0.5, desc = "") {
+  return `<div class="criterion" style="padding:10px 0;">
+    <div class="crit-top"><span class="crit-name" style="font-size:12.5px;">${esc(label)}</span><span class="crit-pts">${val} / ${max}</span></div>
+    ${desc ? `<div class="crit-desc">${desc}</div>` : ""}
+    <div class="slider-row">
+      <input type="range" min="0" max="${max}" step="${step}" value="${val}" data-stu-slider-field="${phase}|${key}">
+      <div class="slider-val">${val}</div>
+    </div>
+  </div>`;
+}
+
+function renderKriterienManager(phase, g, katalog) {
+  const active = new Set((g.aktivKriterien && g.aktivKriterien[phase]) || []);
+  const phaseKrit = (katalog || []).filter((k) => k.phase === phase);
+  return `
+  <div class="section-title" style="margin-top:20px;">Eigene Bewertungsaspekte<span class="btn btn-ghost btn-sm" data-add-kriterium="${phase}">+ Kriterium hinzufügen</span></div>
+  ${phaseKrit.length === 0 ? '<div class="empty-hint">Noch keine eigenen Kriterien angelegt. Über „+ Kriterium hinzufügen" kannst du welche anlegen – sie stehen dann bei allen Gruppen zur Auswahl.</div>' : `
+  <div class="staerken-chips">${phaseKrit.map((k) => `
+    <span class="staerke-chip kriterium-chip ${active.has(k.id) ? "sel" : ""}" data-toggle-kriterium="${phase}|${k.id}">
+      ${esc(k.name)} (${k.max} P)
+      <span class="kriterium-del" data-del-kriterium="${k.id}" title="Kriterium endgültig löschen">✕</span>
+    </span>`).join("")}</div>`}
+  `;
+}
+
 function tabAnmeldung(g) {
-  const b = g.anmeldung.bewertung;
-  const total = Object.values(b).reduce((a, v) => a + Number(v || 0), 0);
+  const katalog = cache.katalog;
+  const student = g.members[state.student] || g.members[0];
+  const rec = (g.anmeldung.bewertungProSchueler || {})[student] || {};
+  const aKrit = activeKriterien(g, "anmeldung", katalog);
+  const fixedKeys = [
+    ["idee", "Projektidee & Beschreibung", 2],
+    ["vollstaendigkeit", "Vollständigkeit der Angaben", 2],
+    ["struktur", "Verständlichkeit & Zuständigkeiten", 2],
+    ["meilensteineP", "Meilensteine / Zeitplanung", 2],
+    ["sorgfalt", "Sorgfalt & Sprache", 2],
+  ];
+  const fixedTotal = fixedKeys.reduce((s, [k]) => s + Number(rec[k] || 0), 0);
+  const zusatz = zusatzScore(rec, aKrit);
+  const total = fixedTotal + zusatz.sum;
+  const max = 10 + zusatz.max;
   return `
   <div class="grid2">
     <div class="card" style="padding:20px;">
@@ -261,25 +315,14 @@ function tabAnmeldung(g) {
         </div>`).join("")}
     </div>
     <div class="card" style="padding:20px;">
-      <div class="section-title">Bewertung Anmeldebogen <span style="color:var(--ink-faint); font-weight:500; text-transform:none;">(10 P)</span></div>
-      ${critRow("Projektidee & Beschreibung", b.idee, 2, "anmeldung.bewertung.idee")}
-      ${critRow("Vollständigkeit der Angaben", b.vollstaendigkeit, 2, "anmeldung.bewertung.vollstaendigkeit")}
-      ${critRow("Verständlichkeit & Zuständigkeiten", b.struktur, 2, "anmeldung.bewertung.struktur")}
-      ${critRow("Meilensteine / Zeitplanung", b.meilensteineP, 2, "anmeldung.bewertung.meilensteineP")}
-      ${critRow("Sorgfalt & Sprache", b.sorgfalt, 2, "anmeldung.bewertung.sorgfalt")}
+      <div class="student-switch" style="margin-bottom:14px;">${g.members.map((m, i) => `<span class="stu-pill ${state.student === i ? "sel" : ""}" data-stu="${i}">${esc(m)}</span>`).join("")}</div>
+      <div class="section-title">Bewertung Anmeldebogen – ${esc(student || "")} <span style="color:var(--ink-faint); font-weight:500; text-transform:none;">(${max} P)</span></div>
+      ${fixedKeys.map(([key, label, kmax]) => critRowStu("anmeldung", label, rec[key] || 0, kmax, key)).join("")}
+      ${aKrit.map((k) => critRowStu("anmeldung", k.name, (rec.zusatz || {})[k.id] || 0, k.max, "zusatz." + k.id, k.max <= 3 ? 0.5 : 1)).join("")}
       <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
-        <b style="font-size:13px;">Gesamt</b><b style="font-size:16px;">${total} / 10</b>
+        <b style="font-size:13px;">Gesamt – ${esc(student || "")}</b><b style="font-size:16px;">${total} / ${max}</b>
       </div>
-    </div>
-  </div>`;
-}
-
-function critRow(label, val, max, field, step = 0.5) {
-  return `<div class="criterion" style="padding:10px 0;">
-    <div class="crit-top"><span class="crit-name" style="font-size:12.5px;">${label}</span><span class="crit-pts">${val} / ${max}</span></div>
-    <div class="slider-row">
-      <input type="range" min="0" max="${max}" step="${step}" value="${val}" data-slider-field="${field}">
-      <div class="slider-val">${val}</div>
+      ${renderKriterienManager("anmeldung", g, katalog)}
     </div>
   </div>`;
 }
@@ -328,8 +371,17 @@ function tabDurchfuehrung(g) {
 }
 
 function tabPraesentation(g) {
+  const katalog = cache.katalog;
   const p = g.praesentation;
-  const zwischensumme = p.sinnhaftigkeit + p.tiefe + p.richtigkeit + p.struktur + p.medien + p.kommunikation + p.verteilung;
+  const student = g.members[state.student] || g.members[0];
+  const rec = (p.bewertungProSchueler || {})[student] || {};
+  const pKrit = activeKriterien(g, "praesentation", katalog);
+  const produktFixed = ["struktur", "medien", "kommunikation", "verteilung"].reduce((s, k) => s + Number(rec[k] || 0), 0);
+  const zusatz = zusatzScore(rec, pKrit);
+  const produkt = produktFixed + zusatz.sum;
+  const produktMax = 15 + zusatz.max;
+  const fach = ["sinnhaftigkeit", "tiefe", "richtigkeit"].reduce((s, k) => s + Number(rec[k] || 0), 0);
+  const fachMax = 10;
   return `
   <div class="grid2">
     <div class="card" style="padding:20px;">
@@ -337,38 +389,45 @@ function tabPraesentation(g) {
       <div class="field-row"><label>Termin</label><input type="text" placeholder="TT.MM.JJJJ" value="${esc(p.termin)}" data-field="praesentation.termin"></div>
       <div class="field-row"><label>Ort</label><input type="text" value="${esc(p.ort)}" data-field="praesentation.ort"></div>
       <div class="field-row"><label>Zielgruppe</label><input type="text" value="${esc(p.zielgruppe)}" data-field="praesentation.zielgruppe"></div>
-      <div class="section-title" style="margin-top:18px;">Produktpräsentation <span style="color:var(--ink-faint); font-weight:500; text-transform:none;">(15 P)</span></div>
-      ${critRow2("Struktur & inhaltliche Darstellung", "Ziel, Vorgehen und Ergebnis werden verständlich dargestellt.", p.struktur, 4, "praesentation.struktur")}
-      ${critRow2("Anschaulichkeit / Medieneinsatz", "Materialien und Visualisierungen unterstützen das Verständnis.", p.medien, 4, "praesentation.medien")}
-      ${critRow2("Kommunikation & Auftreten", "Verständliches Sprechen, adressatengerechte Darstellung.", p.kommunikation, 3, "praesentation.kommunikation")}
-      ${critRow2("Sinnvolle Verteilung in der Gruppe", "Jede/r beteiligt sich aktiv und übernimmt Verantwortung.", p.verteilung, 4, "praesentation.verteilung")}
-    </div>
-    <div class="card" style="padding:20px;">
-      <div class="section-title">Fachliche Bewertung <span style="color:var(--ink-faint); font-weight:500; text-transform:none;">(10 P)</span></div>
-      ${critRow2("Fachliche Sinnhaftigkeit", "Thema & Umsetzung passen klar zum Unterrichtsfach.", p.sinnhaftigkeit, 3, "praesentation.sinnhaftigkeit")}
-      ${critRow2("Inhaltliche Tiefe", "Nachvollziehbare Bearbeitung mit fachlicher Tiefe.", p.tiefe, 3, "praesentation.tiefe")}
-      ${critRow2("Fachliche Richtigkeit", "Die dargestellten Inhalte sind fachlich korrekt.", p.richtigkeit, 4, "praesentation.richtigkeit")}
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
-        <b style="font-size:13px;">Zwischensumme</b><b style="font-size:16px;">${zwischensumme} / 25</b>
-      </div>
       <div class="section-title" style="margin-top:18px;">Rückfragen – Notizen</div>
       <textarea data-field="praesentation.rueckfragenNotiz" style="min-height:80px;">${esc(p.rueckfragenNotiz)}</textarea>
     </div>
+    <div>
+      <div class="card" style="padding:20px; margin-bottom:16px;">
+        <div class="student-switch" style="margin-bottom:14px;">${g.members.map((m, i) => `<span class="stu-pill ${state.student === i ? "sel" : ""}" data-stu="${i}">${esc(m)}</span>`).join("")}</div>
+        <div class="section-title">Produktpräsentation – ${esc(student || "")} <span style="color:var(--ink-faint); font-weight:500; text-transform:none;">(${produktMax} P)</span></div>
+        ${critRowStu("praesentation", "Struktur & inhaltliche Darstellung", rec.struktur || 0, 4, "struktur", 1, "Ziel, Vorgehen und Ergebnis werden verständlich dargestellt.")}
+        ${critRowStu("praesentation", "Anschaulichkeit / Medieneinsatz", rec.medien || 0, 4, "medien", 1, "Materialien und Visualisierungen unterstützen das Verständnis.")}
+        ${critRowStu("praesentation", "Kommunikation & Auftreten", rec.kommunikation || 0, 3, "kommunikation", 1, "Verständliches Sprechen, adressatengerechte Darstellung.")}
+        ${critRowStu("praesentation", "Sinnvolle Verteilung in der Gruppe", rec.verteilung || 0, 4, "verteilung", 1, "Jede/r beteiligt sich aktiv und übernimmt Verantwortung.")}
+        ${pKrit.map((k) => critRowStu("praesentation", k.name, (rec.zusatz || {})[k.id] || 0, k.max, "zusatz." + k.id, k.max <= 3 ? 0.5 : 1)).join("")}
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
+          <b style="font-size:13px;">Zwischensumme</b><b style="font-size:16px;">${produkt} / ${produktMax}</b>
+        </div>
+        ${renderKriterienManager("praesentation", g, katalog)}
+      </div>
+      <div class="card" style="padding:20px;">
+        <div class="section-title">Fachliche Bewertung – ${esc(student || "")} <span style="color:var(--ink-faint); font-weight:500; text-transform:none;">(${fachMax} P)</span></div>
+        ${critRowStu("praesentation", "Fachliche Sinnhaftigkeit", rec.sinnhaftigkeit || 0, 3, "sinnhaftigkeit", 1, "Thema & Umsetzung passen klar zum Unterrichtsfach.")}
+        ${critRowStu("praesentation", "Inhaltliche Tiefe", rec.tiefe || 0, 3, "tiefe", 1, "Nachvollziehbare Bearbeitung mit fachlicher Tiefe.")}
+        ${critRowStu("praesentation", "Fachliche Richtigkeit", rec.richtigkeit || 0, 4, "richtigkeit", 1, "Die dargestellten Inhalte sind fachlich korrekt.")}
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px; padding-top:14px; border-top:1px solid var(--border);">
+          <b style="font-size:13px;">Zwischensumme</b><b style="font-size:16px;">${fach} / ${fachMax}</b>
+        </div>
+      </div>
+    </div>
   </div>`;
-}
-function critRow2(name, desc, val, max, field) {
-  return `<div class="criterion"><div class="crit-top"><span class="crit-name">${name}</span><span class="crit-pts">${val} / ${max}</span></div>
-    <div class="crit-desc">${desc}</div>
-    <div class="slider-row"><input type="range" min="0" max="${max}" step="1" value="${val}" data-slider-field="${field}"><div class="slider-val">${val}</div></div></div>`;
 }
 
 function tabReflexion(g) {
+  const katalog = cache.katalog;
   const student = g.members[state.student] || g.members[0];
   if (!student) return `<div class="card" style="padding:40px; text-align:center;"><div class="empty-hint">Diese Gruppe hat noch keine Mitglieder.</div></div>`;
   const rec = g.reflexion[student] || {};
   const selbst = rec.selbst || {};
   const fremd = rec.fremd || {};
   const auswahl = rec.staerkenAuswahl || [];
+  const rKrit = activeKriterien(g, "reflexion", katalog);
   const cats = [
     ["Produkt aus der Lebenswelt", [["ideenentwicklung", "Ideenentwicklung"], ["information", "Umgang mit Informationen"], ["struktur", "Struktur & Darstellung"]]],
     ["Projektorientiertes Arbeiten", [["projektorg", "Projektorganisation"]]],
@@ -406,6 +465,11 @@ function tabReflexion(g) {
     <div class="section-title">Gesprächsnotizen – ${esc(student)}</div>
     <div class="field-row"><label>Diesen Tipp gebe ich mit</label><textarea data-refl-field="tipp">${esc(rec.tipp)}</textarea></div>
   </div>
+  ${rKrit.length > 0 ? `
+  <div class="card" style="padding:20px; margin-top:16px;">
+    <div class="section-title">Zusätzliche Bewertungskriterien – ${esc(student)}</div>
+    ${rKrit.map((k) => critRowStu("reflexion", k.name, (rec.zusatz || {})[k.id] || 0, k.max, "zusatz." + k.id, k.max <= 3 ? 0.5 : 1)).join("")}
+  </div>` : ""}
   <div class="card" style="padding:20px; margin-top:16px;">
     <div class="section-title">Stärken für die Bescheinigung</div>
     <div class="staerken-chips">${STAERKEN_KATALOG.map((s) => `<span class="staerke-chip ${auswahl.includes(s) ? "sel" : ""}" data-staerke-toggle="${esc(s)}">${esc(s)}</span>`).join("")}</div>
@@ -414,6 +478,9 @@ function tabReflexion(g) {
       <label>Fließtext für die Bescheinigung <span class="btn btn-ghost btn-sm" id="genStaerkenText" style="margin-left:8px;">Text aus Auswahl erzeugen</span></label>
       <textarea data-refl-field="staerkenText" style="min-height:90px;">${esc(rec.staerkenText)}</textarea>
     </div>
+  </div>
+  <div class="card" style="padding:20px; margin-top:16px;">
+    ${renderKriterienManager("reflexion", g, katalog)}
   </div>`;
 }
 
@@ -430,20 +497,37 @@ function scoreFromJmn(obj) {
   return Math.round((sum / keys.length) * 15 * 2) / 2; // auf 0.5 runden, unbeantwortete zählen als 0
 }
 
-function computeScores(g, student) {
-  const b = g.anmeldung.bewertung;
-  const anmeldung = Object.values(b).reduce((a, v) => a + Number(v || 0), 0);
-  const p = g.praesentation;
-  const fach = p.sinnhaftigkeit + p.tiefe + p.richtigkeit;
-  const produkt = p.struktur + p.medien + p.kommunikation + p.verteilung;
+function computeScores(g, student, katalog = cache.katalog) {
+  const aRec = (g.anmeldung.bewertungProSchueler || {})[student] || {};
+  const aFixed = ["idee", "vollstaendigkeit", "struktur", "meilensteineP", "sorgfalt"].reduce((s, k) => s + Number(aRec[k] || 0), 0);
+  const aKrit = activeKriterien(g, "anmeldung", katalog);
+  const aZusatz = zusatzScore(aRec, aKrit);
+  const anmeldung = aFixed + aZusatz.sum;
+  const anmeldungMax = 10 + aZusatz.max;
+
+  const pRec = (g.praesentation.bewertungProSchueler || {})[student] || {};
+  const fach = ["sinnhaftigkeit", "tiefe", "richtigkeit"].reduce((s, k) => s + Number(pRec[k] || 0), 0);
+  const fachMax = 10;
+  const produktFixed = ["struktur", "medien", "kommunikation", "verteilung"].reduce((s, k) => s + Number(pRec[k] || 0), 0);
+  const pKrit = activeKriterien(g, "praesentation", katalog);
+  const pZusatz = zusatzScore(pRec, pKrit);
+  const produkt = produktFixed + pZusatz.sum;
+  const produktMax = 15 + pZusatz.max;
+
   const rec = g.reflexion[student] || {};
   const reflexionSelbst = scoreFromJmn(rec.selbst);
   const reflexionFremd = scoreFromJmn(rec.fremd);
-  const reflexion = Math.round(((reflexionSelbst + reflexionFremd) / 2) * 2) / 2;
+  const reflexionBasis = Math.round(((reflexionSelbst + reflexionFremd) / 2) * 2) / 2;
+  const rKrit = activeKriterien(g, "reflexion", katalog);
+  const rZusatz = zusatzScore(rec, rKrit);
+  const reflexion = reflexionBasis + rZusatz.sum;
+  const reflexionMax = 15 + rZusatz.max;
+
   const gesamt = anmeldung + fach + produkt + reflexion;
-  const pct = Math.round((gesamt / 50) * 100);
+  const gesamtMax = anmeldungMax + fachMax + produktMax + reflexionMax;
+  const pct = gesamtMax > 0 ? Math.round((gesamt / gesamtMax) * 100) : 0;
   const note = pct >= 92 ? 1 : pct >= 81 ? 2 : pct >= 67 ? 3 : pct >= 50 ? 4 : pct >= 30 ? 5 : 6;
-  return { anmeldung, fach, produkt, reflexion, gesamt, pct, noteVorschlag: note };
+  return { anmeldung, anmeldungMax, fach, fachMax, produkt, produktMax, reflexion, reflexionMax, gesamt, gesamtMax, pct, noteVorschlag: note };
 }
 
 function tabBewertung(g) {
@@ -456,18 +540,18 @@ function tabBewertung(g) {
   <div class="student-switch">${g.members.map((m, i) => `<span class="stu-pill ${state.student === i ? "sel" : ""}" data-stu="${i}">${esc(m)}</span>`).join("")}</div>
   <div class="grid2">
     <div class="card" style="padding:20px;">
-      <div class="section-title">Punkteübersicht (50 P gesamt)</div>
+      <div class="section-title">Punkteübersicht (${scores.gesamtMax} P gesamt)</div>
       <div class="score-donut-wrap">
         <div class="grade-badge ${gradeBadgeClass(note)}"><div class="g">${formatNote(note)}</div><div class="p">${scores.pct}%</div></div>
         <div class="score-bars">
-          ${bar("Anmeldeformular", scores.anmeldung, 10)}
-          ${bar("Fachlicher Teil (25% Fachnote)", scores.fach, 10)}
-          ${bar("Produkt / Präsentation", scores.produkt, 15)}
-          ${bar("Reflexion (30% Gesamtnote)", scores.reflexion, 15)}
+          ${bar("Anmeldeformular", scores.anmeldung, scores.anmeldungMax)}
+          ${bar("Fachlicher Teil", scores.fach, scores.fachMax)}
+          ${bar("Produkt / Präsentation", scores.produkt, scores.produktMax)}
+          ${bar("Reflexion", scores.reflexion, scores.reflexionMax)}
         </div>
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; padding-top:14px; border-top:1px solid var(--border);">
-        <b>Gesamt</b><b style="font-size:17px;">${scores.gesamt} / 50 P</b>
+        <b>Gesamt</b><b style="font-size:17px;">${scores.gesamt} / ${scores.gesamtMax} P</b>
       </div>
       <div class="field-row" style="margin-top:14px;"><label>Note (Vorschlag: ${scores.noteVorschlag}) – anpassbar, Dezimalstellen möglich</label>
         <input type="number" min="1" max="6" step="0.1" value="${note}" data-refl-field="note" style="width:90px;">
@@ -480,7 +564,7 @@ function tabBewertung(g) {
         <h2>${esc(student)}</h2>
         <div class="cert-sub">Projekt „Zeig, was du kannst!" ${g.thema ? "· " + esc(g.thema) : ""}</div>
         <div class="cert-line">Note</div>
-        <div class="cert-value">${formatNote(note)} (${scores.gesamt} von 50 Punkten)</div>
+        <div class="cert-value">${formatNote(note)} (${scores.gesamt} von ${scores.gesamtMax} Punkten)</div>
         <div class="cert-line">Gezeigte Stärken</div>
         <div class="cert-strengths">${(rec.staerken || "").split(",").map((s) => s.trim()).filter(Boolean).map((s) => `<span class="strength-tag">${esc(s)}</span>`).join("") || '<span class="empty-hint">Noch keine Stärken in Phase 4 eingetragen.</span>'}</div>
         ${rec.staerkenText ? `<div class="cert-line">Fließtext</div><div style="font-size:12.5px; color:var(--ink-soft); margin-top:4px; line-height:1.5;">${esc(rec.staerkenText)}</div>` : ""}
@@ -490,7 +574,7 @@ function tabBewertung(g) {
   </div>`;
 }
 function bar(label, val, max) {
-  const p = Math.round((val / max) * 100);
+  const p = max > 0 ? Math.round((val / max) * 100) : 0;
   const cls = p >= 80 ? "good" : p >= 50 ? "mid" : "low";
   return `<div class="sb-row"><div class="sb-top"><span>${label}</span><b>${val} / ${max}</b></div><div class="sb-track"><div class="sb-fill ${cls}" style="width:${p}%;"></div></div></div>`;
 }
@@ -556,6 +640,33 @@ function openSettingsModal() {
     cache.meta = await window.zwdk.getMeta();
     renderMetaLabels();
     closeModal();
+  };
+}
+
+function openKriteriumModal(phase) {
+  openModal(`
+    <h2>Kriterium hinzufügen – ${esc(PHASE_LABEL[phase] || phase)}</h2>
+    <p style="font-size:12.5px; color:var(--ink-soft); margin:-8px 0 16px;">Dieses Kriterium steht danach bei allen Gruppen zur Auswahl und zählt zur Gesamtpunktzahl dazu.</p>
+    <div class="field-row"><label>Name des Kriteriums</label><input type="text" id="krName" placeholder="z.B. Umgang mit Rückfragen"></div>
+    <div class="field-row"><label>Maximale Punktzahl</label><input type="number" id="krMax" min="0.5" step="0.5" value="2"></div>
+    <div class="modal-actions"><button class="btn btn-ghost" id="krCancel">Abbrechen</button><button class="btn btn-primary" id="krSave">Hinzufügen</button></div>
+  `);
+  document.getElementById("krCancel").onclick = closeModal;
+  document.getElementById("krSave").onclick = async () => {
+    const name = document.getElementById("krName").value.trim();
+    const max = parseFloat(document.getElementById("krMax").value || "1");
+    if (!name) return;
+    const k = await window.zwdk.addKriterium(phase, name, max);
+    await refreshKatalog();
+    const g = findGroup(state.groupId);
+    if (g) {
+      const list = new Set((g.aktivKriterien && g.aktivKriterien[phase]) || []);
+      list.add(k.id);
+      await window.zwdk.updateGroup(g.id, { aktivKriterien: { [phase]: Array.from(list) } });
+      await refreshGroups();
+    }
+    closeModal();
+    render();
   };
 }
 
@@ -759,16 +870,49 @@ function bindEvents() {
     await refreshGroups(); render();
   }));
 
-  // Regler: Live-Anzeige per input, Commit per change
-  document.querySelectorAll("[data-slider-field]").forEach((n) => {
+  // Bewertungs-Regler pro Schüler:in (Anmeldung / Präsentation / Reflexion-Zusatzkriterien)
+  document.querySelectorAll("[data-stu-slider-field]").forEach((n) => {
     n.oninput = () => { n.parentElement.querySelector(".slider-val").textContent = n.value; };
     n.onchange = async () => {
       const g = findGroup(state.groupId);
-      const patch = patchFromPath(n.dataset.sliderField, parseFloat(n.value));
+      const student = g.members[state.student];
+      const [phase, key] = n.dataset.stuSliderField.split("|");
+      const val = parseFloat(n.value);
+      let inner;
+      if (key.startsWith("zusatz.")) {
+        inner = { zusatz: { [key.slice("zusatz.".length)]: val } };
+      } else {
+        inner = { [key]: val };
+      }
+      let patch;
+      if (phase === "reflexion") {
+        patch = { reflexion: { [student]: inner } };
+      } else {
+        patch = { [phase]: { bewertungProSchueler: { [student]: inner } } };
+      }
       await window.zwdk.updateGroup(g.id, patch);
       await refreshGroups(); render();
     };
   });
+
+  // Kriterienkatalog: hinzufügen / an-/abwählen / löschen
+  document.querySelectorAll("[data-add-kriterium]").forEach((n) => (n.onclick = () => openKriteriumModal(n.dataset.addKriterium)));
+  document.querySelectorAll("[data-toggle-kriterium]").forEach((n) => (n.onclick = async (e) => {
+    if (e.target.closest("[data-del-kriterium]")) return;
+    const g = findGroup(state.groupId);
+    const [phase, id] = n.dataset.toggleKriterium.split("|");
+    const list = new Set((g.aktivKriterien && g.aktivKriterien[phase]) || []);
+    if (list.has(id)) list.delete(id); else list.add(id);
+    await window.zwdk.updateGroup(g.id, { aktivKriterien: { [phase]: Array.from(list) } });
+    await refreshGroups(); render();
+  }));
+  document.querySelectorAll("[data-del-kriterium]").forEach((n) => (n.onclick = async (e) => {
+    e.stopPropagation();
+    if (!confirm("Dieses eigene Kriterium endgültig löschen? Es wird dann bei allen Gruppen entfernt.")) return;
+    await window.zwdk.removeKriterium(n.dataset.delKriterium);
+    await refreshKatalog();
+    await refreshGroups(); render();
+  }));
 
   // Reflexions-/Bewertungsfelder (pro Schüler:in)
   document.querySelectorAll("[data-refl-field]").forEach((n) => (n.onchange = async () => {
@@ -834,7 +978,13 @@ function bindEvents() {
       staerken: rec.staerken || "",
       staerkenText: rec.staerkenText || "",
       note,
-      punkte: { anmeldung: scores.anmeldung, fach: scores.fach, produkt: scores.produkt, reflexion: scores.reflexion, gesamt: scores.gesamt },
+      punkte: {
+        anmeldung: scores.anmeldung, anmeldungMax: scores.anmeldungMax,
+        fach: scores.fach, fachMax: scores.fachMax,
+        produkt: scores.produkt, produktMax: scores.produktMax,
+        reflexion: scores.reflexion, reflexionMax: scores.reflexionMax,
+        gesamt: scores.gesamt, gesamtMax: scores.gesamtMax,
+      },
       lehrkraft: cache.meta.lehrkraft.name || "",
       datum,
     });

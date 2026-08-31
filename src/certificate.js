@@ -117,14 +117,16 @@ async function buildCertificatePdf({ schule, schueler, titel, staerken, staerken
   }
   y -= 12;
 
-  // Punkteübersicht
-  page.drawText("Punkteübersicht (max. 50 P)", { x: 50, y, size: 9, font: bold, color: GREY });
+  // Punkteübersicht (Höchstpunktzahlen sind dynamisch, falls eigene
+  // Bewertungsaspekte der Lehrkraft mit einfließen).
+  const gesamtMax = punkte.gesamtMax ?? 50;
+  page.drawText(`Punkteübersicht (max. ${gesamtMax} P)`, { x: 50, y, size: 9, font: bold, color: GREY });
   y -= 16;
   const rows = [
-    ["Anmeldeformular", punkte.anmeldung, 10],
-    ["Fachlicher Teil", punkte.fach, 10],
-    ["Produkt / Präsentation", punkte.produkt, 15],
-    ["Reflexion", punkte.reflexion, 15],
+    ["Anmeldeformular", punkte.anmeldung, punkte.anmeldungMax ?? 10],
+    ["Fachlicher Teil", punkte.fach, punkte.fachMax ?? 10],
+    ["Produkt / Präsentation", punkte.produkt, punkte.produktMax ?? 15],
+    ["Reflexion", punkte.reflexion, punkte.reflexionMax ?? 15],
   ];
   for (const [label, val, max] of rows) {
     page.drawText(label, { x: 50, y, size: 10.5, font: regular, color: INK });
@@ -134,7 +136,7 @@ async function buildCertificatePdf({ schule, schueler, titel, staerken, staerken
   y -= 6;
   page.drawLine({ start: { x: 50, y: y + 12 }, end: { x: width - 50, y: y + 12 }, thickness: 1, color: GREY });
   page.drawText("Gesamt", { x: 50, y, size: 11, font: bold, color: INK });
-  page.drawText(`${punkte.gesamt} / 50 P`, { x: width - 130, y, size: 11, font: bold, color: INK });
+  page.drawText(`${punkte.gesamt} / ${gesamtMax} P`, { x: width - 130, y, size: 11, font: bold, color: INK });
   y -= 50;
 
   // Note + Unterschrift

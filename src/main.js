@@ -166,6 +166,13 @@ ipcMain.handle("app:chooseLogo", async () => {
 
 ipcMain.handle("app:removeLogo", () => store.setZertifikatSettings({ logoPath: "" }));
 
+ipcMain.handle("kriterien:list", (e, phase) => store.listKriterien(phase));
+ipcMain.handle("kriterien:add", (e, phase, name, max) => store.addKriterium(phase, name, max));
+ipcMain.handle("kriterien:remove", (e, id) => {
+  store.removeKriterium(id);
+  return true;
+});
+
 ipcMain.handle("groups:list", () => store.listGroups().map((g) => ({ ...g, status: store.computeStatus(g) })));
 
 ipcMain.handle("groups:get", (e, id) => {

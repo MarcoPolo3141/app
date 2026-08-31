@@ -17,7 +17,7 @@
 html,body{height:100%;}
 body{
   margin:0;
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Arial,sans-serif;
+  font-family:Arial,"Helvetica Neue",Helvetica,sans-serif;
   color:var(--ink);
   background:var(--bg);
   font-size:14px;
@@ -26,7 +26,7 @@ body{
   user-select:none;
 }
 input, textarea, select, button{ user-select:auto; }
-h1,h2,h3{font-family:Georgia,"Times New Roman",serif; margin:0; letter-spacing:-0.01em;}
+h1,h2,h3{font-family:Arial,"Helvetica Neue",Helvetica,sans-serif; margin:0; letter-spacing:-0.01em;}
 .app{display:flex; height:100vh; overflow:hidden;}
 
 /* Titlebar-Ausgleich (macOS Verkehrsampeln / Windows-Look) */
@@ -46,7 +46,7 @@ h1,h2,h3{font-family:Georgia,"Times New Roman",serif; margin:0; letter-spacing:-
 }
 .brand-badge svg{width:20px;height:20px;}
 .brand-text{line-height:1.15;}
-.brand-text b{font-family:Georgia,serif; font-size:15px; display:block;}
+.brand-text b{font-family:Arial,"Helvetica Neue",Helvetica,sans-serif; font-size:15px; display:block;}
 .brand-text span{font-size:11px; color:#a9a9a3;}
 .nav{display:flex; flex-direction:column; gap:2px; margin-top:6px;}
 .nav-item{
@@ -106,7 +106,7 @@ h1,h2,h3{font-family:Georgia,"Times New Roman",serif; margin:0; letter-spacing:-
 
 .stat-row{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px;}
 .stat-card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px;}
-.stat-card .n{font-family:Georgia,serif; font-size:26px; font-weight:700;}
+.stat-card .n{font-family:Arial,"Helvetica Neue",Helvetica,sans-serif; font-size:26px; font-weight:700;}
 .stat-card .l{font-size:12px; color:var(--ink-soft); margin-top:2px;}
 .stat-card.warn .n{color:var(--amber);}
 .stat-card.alert .n{color:var(--red);}
@@ -138,7 +138,7 @@ h1,h2,h3{font-family:Georgia,"Times New Roman",serif; margin:0; letter-spacing:-
 .gp-head{display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:18px; gap:14px; flex-wrap:wrap;}
 .gp-actions{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
 .gp-title{display:flex; align-items:center; gap:12px;}
-.gp-icon{width:44px;height:44px; border-radius:12px; background:var(--yellow); display:flex; align-items:center; justify-content:center; font-family:Georgia,serif; font-weight:700; font-size:17px; flex-shrink:0;}
+.gp-icon{width:44px;height:44px; border-radius:12px; background:var(--yellow); display:flex; align-items:center; justify-content:center; font-family:Arial,"Helvetica Neue",Helvetica,sans-serif; font-weight:700; font-size:17px; flex-shrink:0;}
 .gp-title h1{font-size:22px;}
 .gp-title .sub{font-size:13px; color:var(--ink-soft); margin-top:3px;}
 .members{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;}
@@ -234,7 +234,7 @@ input[type=range]{flex:1; accent-color:var(--ink); height:5px;}
 .sb-fill.low{background:var(--red);}
 
 .grade-badge{width:96px;height:96px;border-radius:50%; background:var(--yellow); display:flex; flex-direction:column; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 6px 18px rgba(0,0,0,.08);}
-.grade-badge .g{font-family:Georgia,serif; font-size:32px; font-weight:700; line-height:1;}
+.grade-badge .g{font-family:Arial,"Helvetica Neue",Helvetica,sans-serif; font-size:32px; font-weight:700; line-height:1;}
 .grade-badge .p{font-size:10.5px; font-weight:600; margin-top:3px; opacity:.75;}
 .grade-badge.top{background:var(--green-bg);}
 .grade-badge.top .g{color:var(--green);}
@@ -247,6 +247,9 @@ input[type=range]{flex:1; accent-color:var(--ink); height:5px;}
 .staerke-chip{font-size:12px; font-weight:600; padding:7px 13px; border-radius:20px; background:var(--bg); border:1px solid var(--border); color:var(--ink-soft); cursor:pointer; transition:background 140ms ease-out, color 140ms ease-out, border-color 140ms ease-out;}
 .staerke-chip:hover{border-color:var(--ink-faint);}
 .staerke-chip.sel{background:var(--ink); color:var(--yellow); border-color:var(--ink);}
+.kriterium-chip{display:inline-flex; align-items:center; gap:6px;}
+.kriterium-del{opacity:.55; font-size:11px; cursor:pointer;}
+.kriterium-del:hover{opacity:1; color:var(--red);}
 
 .cert-preview{background:#fbfaf5; border:1px solid var(--border); border-radius:16px; padding:34px 38px; position:relative; overflow:hidden;}
 .cert-preview::before{content:""; position:absolute; top:-40px; right:-40px; width:160px; height:160px; background:var(--yellow); border-radius:50%; opacity:.5;}

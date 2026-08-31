@@ -11,6 +11,10 @@ contextBridge.exposeInMainWorld("zwdk", {
   chooseLogo: () => ipcRenderer.invoke("app:chooseLogo"),
   removeLogo: () => ipcRenderer.invoke("app:removeLogo"),
 
+  listKriterien: (phase) => ipcRenderer.invoke("kriterien:list", phase),
+  addKriterium: (phase, name, max) => ipcRenderer.invoke("kriterien:add", phase, name, max),
+  removeKriterium: (id) => ipcRenderer.invoke("kriterien:remove", id),
+
   listGroups: () => ipcRenderer.invoke("groups:list"),
   getGroup: (id) => ipcRenderer.invoke("groups:get", id),
   createGroup: (payload) => ipcRenderer.invoke("groups:create", payload),

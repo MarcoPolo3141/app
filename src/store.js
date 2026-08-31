@@ -15,6 +15,7 @@ function defaultData() {
     schuljahr: schuljahrLabel(),
     lehrkraft: { name: "", schule: "" },
     zertifikat: { farbe: "#FFED00", layout: "klassisch", logoPath: "" },
+    kriterienKatalog: [], // wiederverwendbare, selbst angelegte Bewertungsaspekte je Phase
     groups: [],
   };
 }
@@ -45,6 +46,7 @@ class Store {
         // wenn eine ältere Datenbasis geladen wird.
         merged.lehrkraft = { ...defaultData().lehrkraft, ...(parsed.lehrkraft || {}) };
         merged.zertifikat = { ...defaultData().zertifikat, ...(parsed.zertifikat || {}) };
+        merged.kriterienKatalog = Array.isArray(parsed.kriterienKatalog) ? parsed.kriterienKatalog : [];
         return merged;
       }
     } catch (e) {
@@ -84,6 +86,37 @@ class Store {
     return this.data.zertifikat;
   }
 
+  // ---------- Kriterienkatalog (eigene, wiederverwendbare Bewertungsaspekte) ----------
+  listKriterien(phase) {
+    return this.data.kriterienKatalog.filter((k) => !phase || k.phase === phase);
+  }
+
+  addKriterium(phase, name, max) {
+    const k = {
+      id: crypto.randomUUID(),
+      phase, // "anmeldung" | "praesentation" | "reflexion"
+      name: String(name || "Kriterium").trim() || "Kriterium",
+      max: Math.max(0.5, Number(max) || 1),
+    };
+    this.data.kriterienKatalog.push(k);
+    this.save();
+    return k;
+  }
+
+  removeKriterium(id) {
+    const k = this.data.kriterienKatalog.find((x) => x.id === id);
+    this.data.kriterienKatalog = this.data.kriterienKatalog.filter((x) => x.id !== id);
+    if (k) {
+      // Aus allen Gruppen als "aktiv" entfernen, damit keine verwaisten Referenzen bleiben.
+      for (const g of this.data.groups) {
+        if (g.aktivKriterien && Array.isArray(g.aktivKriterien[k.phase])) {
+          g.aktivKriterien[k.phase] = g.aktivKriterien[k.phase].filter((cid) => cid !== id);
+        }
+      }
+    }
+    this.save();
+  }
+
   // ---------- Gruppen ----------
   listGroups() {
     return this.data.groups;
@@ -114,7 +147,8 @@ class Store {
       anmeldung: {
         beschreibung: "",
         meilensteine: [],
-        bewertung: { idee: 0, vollstaendigkeit: 0, struktur: 0, meilensteineP: 0, sorgfalt: 0 },
+        // je Mitgliedsname: { idee, vollstaendigkeit, struktur, meilensteineP, sorgfalt, zusatz:{[kriteriumId]:wert} }
+        bewertungProSchueler: {},
       },
       durchfuehrung: {
         protokoll: [],
@@ -122,12 +156,13 @@ class Store {
         beratung: { status: "nicht_geplant", datum: "", notiz: "" },
       },
       praesentation: {
-        termin: "", ort: "", zielgruppe: "",
-        struktur: 0, medien: 0, kommunikation: 0, verteilung: 0,
-        sinnhaftigkeit: 0, tiefe: 0, richtigkeit: 0,
-        rueckfragenNotiz: "",
+        termin: "", ort: "", zielgruppe: "", rueckfragenNotiz: "",
+        // je Mitgliedsname: { struktur, medien, kommunikation, verteilung, sinnhaftigkeit, tiefe, richtigkeit, zusatz:{[kriteriumId]:wert} }
+        bewertungProSchueler: {},
       },
-      reflexion: {}, // je Mitgliedsname: { selbst:{}, fremd:{}, staerken, staerkenAuswahl, staerkenText, tipp, note, begruendung }
+      // welche selbst angelegten Kriterien (aus dem globalen Katalog) für diese Gruppe je Phase aktiv sind
+      aktivKriterien: { anmeldung: [], praesentation: [], reflexion: [] },
+      reflexion: {}, // je Mitgliedsname: { selbst:{}, fremd:{}, staerken, staerkenAuswahl, staerkenText, tipp, note, begruendung, zusatz:{[kriteriumId]:wert} }
     };
     this.data.groups.push(g);
     this.save();
@@ -210,7 +245,12 @@ class Store {
     // vereinzelt Reflexionsnotizen existieren, aber die Präsentation noch
     // gar nicht stattgefunden hat).
     const hatDurchfuehrung = g.durchfuehrung.protokoll.length > 0 || g.durchfuehrung.stunden > 0;
-    const hatPraesentation = g.praesentation && Object.values(g.praesentation).some((v) => (typeof v === "number" ? v > 0 : String(v || "").trim() !== ""));
+    const p = g.praesentation || {};
+    const hatPraesentationAngaben = ["termin", "ort", "zielgruppe", "rueckfragenNotiz"].some((k) => String(p[k] || "").trim() !== "");
+    const hatPraesentationPunkte = Object.values(p.bewertungProSchueler || {}).some(
+      (rec) => rec && Object.entries(rec).some(([k, v]) => (k === "zusatz" ? Object.values(v || {}).some((zv) => Number(zv) > 0) : Number(v) > 0))
+    );
+    const hatPraesentation = hatPraesentationAngaben || hatPraesentationPunkte;
     const hatReflexion = g.reflexion && Object.keys(g.reflexion).length > 0;
     if (hatPraesentation && hatReflexion) return 4;
     if (hatDurchfuehrung && hatPraesentation) return 3;
