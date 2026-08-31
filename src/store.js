@@ -14,7 +14,7 @@ function defaultData() {
     version: CURRENT_VERSION,
     schuljahr: schuljahrLabel(),
     lehrkraft: { name: "", schule: "" },
-    zertifikat: { farbe: "#FFED00", layout: "klassisch", logoPath: "" },
+    zertifikat: { farbe: "#FFED00", layout: "klassisch", logoPath: "", ueberschrift: '"Zeig, was du kannst!"', unterschriftPath: "" },
     kriterienKatalog: [], // wiederverwendbare, selbst angelegte Bewertungsaspekte je Phase
     groups: [],
   };

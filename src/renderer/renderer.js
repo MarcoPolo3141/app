@@ -49,6 +49,32 @@ const STAERKEN_BAUSTEINE = {
   "Verantwortungsbewusstsein": "Verantwortung für die eigenen Aufgaben übernommen",
 };
 
+// Selbst-/Fremdeinschätzung (Reflexion) -> positive Formulierung je Kompetenz.
+// Nur "ja"/"mittel" fließen ein, "nein" wird bewusst nicht erwähnt, damit der
+// Bescheinigungstext durchgehend positiv bleibt.
+const JMN_BAUSTEINE = {
+  ideenentwicklung: "eigene Ideen in die Produktentwicklung eingebracht",
+  information: "Informationen sinnvoll recherchiert und genutzt",
+  struktur: "die Ergebnisse klar strukturiert dargestellt",
+  projektorg: "das Projekt gut organisiert",
+  kreativitaet: "kreative Lösungsansätze gefunden",
+  kritisch: "kritisch und reflektiert gedacht",
+  kooperation: "gut im Team zusammengearbeitet",
+  kommunikation: "sich klar und verständlich ausgedrückt",
+  reflexion: "das eigene Vorgehen reflektiert",
+};
+// Präsentationsbewertung -> nur gut bis sehr gut bewertete Aspekte (>= 75 % der
+// erreichbaren Punktzahl) fließen als positive Erwähnung mit ein.
+const PRAESENTATION_BAUSTEINE = {
+  struktur: { label: "die Präsentation klar strukturiert aufgebaut", max: 4 },
+  medien: { label: "Medien anschaulich eingesetzt", max: 4 },
+  kommunikation: { label: "sicher und verständlich kommuniziert", max: 3 },
+  verteilung: { label: "sich aktiv und verantwortungsbewusst eingebracht", max: 4 },
+  sinnhaftigkeit: { label: "einen klaren fachlichen Bezug hergestellt", max: 3 },
+  tiefe: { label: "das Thema inhaltlich vertieft bearbeitet", max: 3 },
+  richtigkeit: { label: "die Inhalte fachlich korrekt dargestellt", max: 4 },
+};
+
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
@@ -61,15 +87,44 @@ function gradeBadgeClass(note) {
   if (n <= 4) return "mid";
   return "low";
 }
-function buildStaerkenFliesstext(vorname, auswahl, freitext) {
-  const teile = (auswahl || []).map((s) => STAERKEN_BAUSTEINE[s]).filter(Boolean);
-  const extra = (freitext || "").split(",").map((s) => s.trim()).filter(Boolean);
-  const alle = [...teile, ...extra];
-  if (alle.length === 0) return "";
-  let liste;
-  if (alle.length === 1) liste = alle[0];
-  else liste = alle.slice(0, -1).join(", ") + " und " + alle[alle.length - 1];
-  return `${vorname} hat im Projekt vor allem ${liste} gezeigt.`;
+// Kombiniert Stärken-Chips + Freitext, positiv bewertete Aspekte aus der
+// Selbst-/Fremdeinschätzung, gut bewertete Präsentationskriterien und optional
+// den Tipp (nur falls die Lehrkraft ihn explizit für die Bescheinigung
+// freigegeben hat) zu einem zusammenhängenden, durchgehend positiven Fließtext.
+function buildVollstaendigenFliesstext(g, student) {
+  const rec = g.reflexion[student] || {};
+  const vorname = (student || "").split(" ")[0];
+  const teile = [];
+
+  (rec.staerkenAuswahl || []).forEach((s) => { if (STAERKEN_BAUSTEINE[s]) teile.push(STAERKEN_BAUSTEINE[s]); });
+  (rec.staerken || "").split(",").map((s) => s.trim()).filter(Boolean).forEach((s) => teile.push(s));
+
+  const selbst = rec.selbst || {};
+  const fremd = rec.fremd || {};
+  Object.keys(JMN_BAUSTEINE).forEach((k) => {
+    const positiv = selbst[k] === "ja" || selbst[k] === "mittel" || fremd[k] === "ja" || fremd[k] === "mittel";
+    if (positiv) teile.push(JMN_BAUSTEINE[k]);
+  });
+
+  const pRec = (g.praesentation.bewertungProSchueler || {})[student] || {};
+  Object.entries(PRAESENTATION_BAUSTEINE).forEach(([k, info]) => {
+    const val = Number(pRec[k] || 0);
+    if (info.max > 0 && val / info.max >= 0.75) teile.push(info.label);
+  });
+
+  const eindeutig = Array.from(new Set(teile));
+
+  let satz = "";
+  if (eindeutig.length > 0) {
+    const liste = eindeutig.length === 1 ? eindeutig[0] : eindeutig.slice(0, -1).join(", ") + " und " + eindeutig[eindeutig.length - 1];
+    satz = `${vorname} hat im Projekt vor allem ${liste} gezeigt.`;
+  }
+
+  if (rec.tippInBescheinigung && rec.tipp && rec.tipp.trim()) {
+    satz += (satz ? " " : "") + `Als Impuls für die Weiterentwicklung: ${rec.tipp.trim()}`;
+  }
+
+  return satz;
 }
 
 /* ---------------- Kriterienkatalog: Hilfsfunktionen ---------------- */
@@ -464,6 +519,10 @@ function tabReflexion(g) {
   <div class="card" style="padding:20px; margin-top:16px;">
     <div class="section-title">Gesprächsnotizen – ${esc(student)}</div>
     <div class="field-row"><label>Diesen Tipp gebe ich mit</label><textarea data-refl-field="tipp">${esc(rec.tipp)}</textarea></div>
+    <label style="display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-soft); font-weight:600; cursor:pointer;">
+      <input type="checkbox" data-refl-field="tippInBescheinigung" ${rec.tippInBescheinigung ? "checked" : ""} style="width:auto;">
+      In Bescheinigung aufnehmen (positiv umformuliert als Entwicklungsimpuls)
+    </label>
   </div>
   ${rKrit.length > 0 ? `
   <div class="card" style="padding:20px; margin-top:16px;">
@@ -475,7 +534,8 @@ function tabReflexion(g) {
     <div class="staerken-chips">${STAERKEN_KATALOG.map((s) => `<span class="staerke-chip ${auswahl.includes(s) ? "sel" : ""}" data-staerke-toggle="${esc(s)}">${esc(s)}</span>`).join("")}</div>
     <div class="field-row" style="margin-top:12px;"><label>Weitere Stärken (frei, komma-getrennt)</label><textarea data-refl-field="staerken">${esc(rec.staerken)}</textarea></div>
     <div class="field-row">
-      <label>Fließtext für die Bescheinigung <span class="btn btn-ghost btn-sm" id="genStaerkenText" style="margin-left:8px;">Text aus Auswahl erzeugen</span></label>
+      <label>Fließtext für die Bescheinigung <span class="btn btn-ghost btn-sm" id="genStaerkenText" style="margin-left:8px;">Text automatisch erzeugen</span></label>
+      <p style="font-size:11.5px; color:var(--ink-faint); margin:-2px 0 6px;">Berücksichtigt Stärken, Selbst-/Fremdeinschätzung, Präsentationsbewertung und ggf. den Tipp – immer positiv formuliert. Danach frei bearbeitbar (auch auf der Seite „Bewertung & Bescheinigung").</p>
       <textarea data-refl-field="staerkenText" style="min-height:90px;">${esc(rec.staerkenText)}</textarea>
     </div>
   </div>
@@ -557,6 +617,10 @@ function tabBewertung(g) {
         <input type="number" min="1" max="6" step="0.1" value="${note}" data-refl-field="note" style="width:90px;">
       </div>
       <div class="field-row"><label>Begründung</label><textarea data-refl-field="begruendung">${esc(rec.begruendung)}</textarea></div>
+      <div class="field-row">
+        <label>Fließtext für die Bescheinigung <span class="btn btn-ghost btn-sm" id="genStaerkenText" style="margin-left:8px;">Text automatisch erzeugen</span></label>
+        <textarea data-refl-field="staerkenText" style="min-height:90px;">${esc(rec.staerkenText)}</textarea>
+      </div>
     </div>
     <div class="cert-preview">
       <div class="cert-inner">
@@ -597,6 +661,7 @@ function openSettingsModal() {
     <div class="field-row"><label>Name der Schule</label><input type="text" id="stSchule" value="${esc(m.lehrkraft.schule)}"></div>
     <div class="field-row"><label>Schuljahr</label><input type="text" id="stSchuljahr" value="${esc(m.schuljahr)}" placeholder="z.B. 2025/26"></div>
     <div class="section-title" style="margin-top:18px;">Bescheinigung / Zertifikat</div>
+    <div class="field-row"><label>Überschrift</label><input type="text" id="stUeberschrift" value="${esc(z.ueberschrift || '"Zeig, was du kannst!"')}"></div>
     <div class="field-row"><label>Akzentfarbe</label><input type="color" id="stFarbe" value="${esc(z.farbe || "#FFED00")}" style="height:38px; padding:4px;"></div>
     <div class="field-row"><label>Layout</label>
       <select id="stLayout">
@@ -609,6 +674,14 @@ function openSettingsModal() {
         ${z.logoPath ? `<span class="fach-pill">Logo hinterlegt</span>` : `<span class="empty-hint" style="padding:0;">Kein Logo hinterlegt</span>`}
         <span class="btn btn-ghost btn-sm" id="stLogoChoose">Logo auswählen …</span>
         ${z.logoPath ? `<span class="btn btn-ghost btn-sm" id="stLogoRemove">Entfernen</span>` : ""}
+      </div>
+    </div>
+    <div class="field-row"><label>Digitale Unterschrift</label>
+      <p style="font-size:11.5px; color:var(--ink-faint); margin:-2px 0 6px;">Bild (z.B. Foto/Scan der Unterschrift) – wird automatisch auf jeder Bescheinigung im Unterschriftenfeld eingefügt.</p>
+      <div style="display:flex; align-items:center; gap:10px;">
+        ${z.unterschriftPath ? `<span class="fach-pill">Unterschrift hinterlegt</span>` : `<span class="empty-hint" style="padding:0;">Keine Unterschrift hinterlegt</span>`}
+        <span class="btn btn-ghost btn-sm" id="stSigChoose">Bild auswählen …</span>
+        ${z.unterschriftPath ? `<span class="btn btn-ghost btn-sm" id="stSigRemove">Entfernen</span>` : ""}
       </div>
     </div>
     <div class="modal-actions">
@@ -627,15 +700,27 @@ function openSettingsModal() {
     cache.zertifikat = await window.zwdk.removeLogo();
     openSettingsModal();
   };
+  const sigChoose = document.getElementById("stSigChoose");
+  if (sigChoose) sigChoose.onclick = async () => {
+    cache.zertifikat = await window.zwdk.chooseUnterschrift();
+    openSettingsModal();
+  };
+  const sigRemove = document.getElementById("stSigRemove");
+  if (sigRemove) sigRemove.onclick = async () => {
+    cache.zertifikat = await window.zwdk.removeUnterschrift();
+    openSettingsModal();
+  };
   document.getElementById("stSave").onclick = async () => {
     const name = document.getElementById("stName").value.trim();
     const schule = document.getElementById("stSchule").value.trim();
     const schuljahr = document.getElementById("stSchuljahr").value.trim();
+    const ueberschrift = document.getElementById("stUeberschrift").value.trim();
     const farbe = document.getElementById("stFarbe").value;
     const layout = document.getElementById("stLayout").value;
     await window.zwdk.setLehrkraft({ name, schule });
     await window.zwdk.setSchuljahr(schuljahr);
     await window.zwdk.setZertifikatFarbe(farbe);
+    await window.zwdk.setZertifikatUeberschrift(ueberschrift);
     cache.zertifikat = await window.zwdk.setZertifikatLayout(layout);
     cache.meta = await window.zwdk.getMeta();
     renderMetaLabels();
@@ -918,7 +1003,7 @@ function bindEvents() {
   document.querySelectorAll("[data-refl-field]").forEach((n) => (n.onchange = async () => {
     const g = findGroup(state.groupId);
     const student = g.members[state.student];
-    const val = n.type === "number" ? parseFloat(n.value || "0") : n.value;
+    const val = n.type === "checkbox" ? n.checked : n.type === "number" ? parseFloat(n.value || "0") : n.value;
     const rec = { ...(g.reflexion[student] || {}), [n.dataset.reflField]: val };
     await window.zwdk.updateGroup(g.id, { reflexion: { [student]: rec } });
     await refreshGroups(); render();
@@ -956,7 +1041,7 @@ function bindEvents() {
     const g = findGroup(state.groupId);
     const student = g.members[state.student];
     const rec = { ...(g.reflexion[student] || {}) };
-    rec.staerkenText = buildStaerkenFliesstext(student.split(" ")[0], rec.staerkenAuswahl || [], rec.staerken || "");
+    rec.staerkenText = buildVollstaendigenFliesstext(g, student);
     await window.zwdk.updateGroup(g.id, { reflexion: { [student]: rec } });
     await refreshGroups(); render();
   };

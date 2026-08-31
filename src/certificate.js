@@ -20,11 +20,12 @@ function formatNote(note) {
   return note === undefined || note === null || note === "" ? "" : String(note).replace(".", ",");
 }
 
-async function buildCertificatePdf({ schule, schueler, titel, staerken, staerkenText, note, punkte, lehrkraft, datum, farbe, layout, logoPath }) {
+async function buildCertificatePdf({ schule, schueler, titel, staerken, staerkenText, note, punkte, lehrkraft, datum, farbe, layout, logoPath, ueberschrift, unterschriftPath }) {
   const tuple = hexToTuple(farbe);
   const ACCENT = rgb(...tuple);
   const ON_ACCENT = luminance(tuple) > 0.6 ? INK : WHITE;
   const modern = layout === "modern";
+  const titelText = (ueberschrift && String(ueberschrift).trim()) || '"Zeig, was du kannst!"';
 
   const doc = await PDFDocument.create();
   const page = doc.addPage([595.28, 841.89]); // A4
@@ -32,16 +33,18 @@ async function buildCertificatePdf({ schule, schueler, titel, staerken, staerken
   const regular = await doc.embedFont(StandardFonts.Helvetica);
   const { width, height } = page.getSize();
 
-  // Optionales Schullogo einbetten (robust gegen fehlende/kaputte Datei).
-  let logoImg = null;
-  if (logoPath) {
+  // Optionales Schullogo / optionale Unterschrift einbetten (robust gegen fehlende/kaputte Datei).
+  async function embedBild(bildPath) {
+    if (!bildPath) return null;
     try {
-      const bytes = fs.readFileSync(logoPath);
-      logoImg = /\.png$/i.test(logoPath) ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+      const bytes = fs.readFileSync(bildPath);
+      return /\.png$/i.test(bildPath) ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
     } catch (_) {
-      logoImg = null;
+      return null;
     }
   }
+  const logoImg = await embedBild(logoPath);
+  const unterschriftImg = await embedBild(unterschriftPath);
 
   let y = height - 70;
 
@@ -50,7 +53,7 @@ async function buildCertificatePdf({ schule, schueler, titel, staerken, staerken
     const headH = 110;
     page.drawRectangle({ x: 0, y: height - headH, width, height: headH, color: ACCENT });
     page.drawText("BESCHEINIGUNG", { x: 50, y: height - 38, size: 11, font: bold, color: ON_ACCENT });
-    page.drawText('"Zeig, was du kannst!"', { x: 50, y: height - 74, size: 26, font: bold, color: ON_ACCENT });
+    page.drawText(titelText, { x: 50, y: height - 74, size: 26, font: bold, color: ON_ACCENT });
     if (logoImg) {
       const h = 60, w = (logoImg.width / logoImg.height) * h;
       page.drawImage(logoImg, { x: width - 50 - w, y: height - headH + (headH - h) / 2, width: w, height: h });
@@ -65,7 +68,7 @@ async function buildCertificatePdf({ schule, schueler, titel, staerken, staerken
     }
     page.drawText("BESCHEINIGUNG", { x: 50, y, size: 11, font: bold, color: GREY });
     y -= 26;
-    page.drawText('"Zeig, was du kannst!"', { x: 50, y, size: 26, font: bold, color: INK });
+    page.drawText(titelText, { x: 50, y, size: 26, font: bold, color: INK });
     y -= 40;
   }
 
@@ -82,7 +85,7 @@ async function buildCertificatePdf({ schule, schueler, titel, staerken, staerken
   page.drawText("Zielsetzung des Projekts", { x: 50, y, size: 9, font: bold, color: GREY });
   y -= 14;
   const zielText =
-    'In "Zeig, was du kannst!" entwickeln Schülerinnen und Schüler in Kleingruppen ein authentisches ' +
+    `In ${titelText} entwickeln Schülerinnen und Schüler in Kleingruppen ein authentisches ` +
     "Produkt, das einen Bezug zu ihrer Lebenswelt hat. Sie verknüpfen theoretisches Wissen mit " +
     "kreativer, problemlösender Arbeit in lebensweltorientierten Kontexten. Jede Schülerin bzw. jeder " +
     "Schüler erhält eine individuelle Note. Das Projekt umfasst die selbstständige Vorbereitung, die " +
@@ -150,6 +153,13 @@ async function buildCertificatePdf({ schule, schueler, titel, staerken, staerken
     page.drawText(formatNote(note), { x: width - 110, y: y - 15, size: 26, font: bold, color: INK });
   }
 
+  // Unterschriftenfeld: mit hinterlegter digitaler Unterschrift (Bild deutlich
+  // oberhalb der Linie und des Beschriftungstextes, damit nichts überlappt)
+  // oder klassisch als Leerraum zum handschriftlichen Unterschreiben.
+  if (unterschriftImg) {
+    const sh = 28, sw = Math.min((unterschriftImg.width / unterschriftImg.height) * sh, 160);
+    page.drawImage(unterschriftImg, { x: 55, y: y - 10, width: sw, height: sh });
+  }
   page.drawText("Datum, Unterschrift der Lehrkraft", { x: 50, y: y - 40, size: 9, font: bold, color: GREY });
   page.drawLine({ start: { x: 50, y: y - 46 }, end: { x: 280, y: y - 46 }, thickness: 1, color: GREY });
   page.drawText(`${datum || ""}    ${lehrkraft || ""}`, { x: 50, y: y - 58, size: 10, font: regular, color: INK });

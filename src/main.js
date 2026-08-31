@@ -143,10 +143,11 @@ ipcMain.handle("app:setSchuljahr", (e, value) => store.setSchuljahr(value));
 ipcMain.handle("app:getZertifikatSettings", () => store.data.zertifikat);
 ipcMain.handle("app:setZertifikatFarbe", (e, farbe) => store.setZertifikatSettings({ farbe }));
 ipcMain.handle("app:setZertifikatLayout", (e, layout) => store.setZertifikatSettings({ layout }));
+ipcMain.handle("app:setZertifikatUeberschrift", (e, value) => store.setZertifikatSettings({ ueberschrift: value }));
 
-ipcMain.handle("app:chooseLogo", async () => {
+async function chooseBildFuerZertifikat(dialogTitle, dateiName, settingsFeld) {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-    title: "Schullogo auswählen",
+    title: dialogTitle,
     filters: [{ name: "Bilder", extensions: ["png", "jpg", "jpeg"] }],
     properties: ["openFile"],
   });
@@ -155,16 +156,20 @@ ipcMain.handle("app:chooseLogo", async () => {
     const ext = path.extname(filePaths[0]).toLowerCase() || ".png";
     const destDir = path.join(app.getPath("userData"), "assets");
     fs.mkdirSync(destDir, { recursive: true });
-    const dest = path.join(destDir, "schullogo" + ext);
+    const dest = path.join(destDir, dateiName + ext);
     fs.copyFileSync(filePaths[0], dest);
-    return store.setZertifikatSettings({ logoPath: dest });
+    return store.setZertifikatSettings({ [settingsFeld]: dest });
   } catch (e) {
-    dialog.showMessageBox(mainWindow, { type: "warning", title: "Logo konnte nicht übernommen werden", message: String(e) });
+    dialog.showMessageBox(mainWindow, { type: "warning", title: "Bild konnte nicht übernommen werden", message: String(e) });
     return store.data.zertifikat;
   }
-});
+}
 
+ipcMain.handle("app:chooseLogo", () => chooseBildFuerZertifikat("Schullogo auswählen", "schullogo", "logoPath"));
 ipcMain.handle("app:removeLogo", () => store.setZertifikatSettings({ logoPath: "" }));
+
+ipcMain.handle("app:chooseUnterschrift", () => chooseBildFuerZertifikat("Unterschrift auswählen", "unterschrift", "unterschriftPath"));
+ipcMain.handle("app:removeUnterschrift", () => store.setZertifikatSettings({ unterschriftPath: "" }));
 
 ipcMain.handle("kriterien:list", (e, phase) => store.listKriterien(phase));
 ipcMain.handle("kriterien:add", (e, phase, name, max) => store.addKriterium(phase, name, max));
@@ -191,7 +196,14 @@ ipcMain.handle("groups:delete", (e, id) => {
 
 ipcMain.handle("cert:generate", async (e, payload) => {
   const z = store.data.zertifikat || {};
-  const bytes = await buildCertificatePdf({ ...payload, farbe: z.farbe, layout: z.layout, logoPath: z.logoPath });
+  const bytes = await buildCertificatePdf({
+    ...payload,
+    farbe: z.farbe,
+    layout: z.layout,
+    logoPath: z.logoPath,
+    ueberschrift: z.ueberschrift,
+    unterschriftPath: z.unterschriftPath,
+  });
   const safeName = (payload.schueler || "Bescheinigung").replace(/[\\/:*?"<>|]/g, "_");
   const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
     title: "Bescheinigung speichern",

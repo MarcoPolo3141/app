@@ -8,8 +8,11 @@ contextBridge.exposeInMainWorld("zwdk", {
   getZertifikatSettings: () => ipcRenderer.invoke("app:getZertifikatSettings"),
   setZertifikatFarbe: (farbe) => ipcRenderer.invoke("app:setZertifikatFarbe", farbe),
   setZertifikatLayout: (layout) => ipcRenderer.invoke("app:setZertifikatLayout", layout),
+  setZertifikatUeberschrift: (value) => ipcRenderer.invoke("app:setZertifikatUeberschrift", value),
   chooseLogo: () => ipcRenderer.invoke("app:chooseLogo"),
   removeLogo: () => ipcRenderer.invoke("app:removeLogo"),
+  chooseUnterschrift: () => ipcRenderer.invoke("app:chooseUnterschrift"),
+  removeUnterschrift: () => ipcRenderer.invoke("app:removeUnterschrift"),
 
   listKriterien: (phase) => ipcRenderer.invoke("kriterien:list", phase),
   addKriterium: (phase, name, max) => ipcRenderer.invoke("kriterien:add", phase, name, max),
