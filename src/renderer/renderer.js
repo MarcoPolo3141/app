@@ -586,7 +586,10 @@ function computeScores(g, student, katalog = cache.katalog) {
   const gesamt = anmeldung + fach + produkt + reflexion;
   const gesamtMax = anmeldungMax + fachMax + produktMax + reflexionMax;
   const pct = gesamtMax > 0 ? Math.round((gesamt / gesamtMax) * 100) : 0;
-  const note = pct >= 92 ? 1 : pct >= 81 ? 2 : pct >= 67 ? 3 : pct >= 50 ? 4 : pct >= 30 ? 5 : 6;
+  // Linearer Notenschlüssel: 0 Punkte = Note 6, volle Punktzahl = Note 1,
+  // dazwischen linear mit einer Nachkommastelle.
+  const noteRaw = gesamtMax > 0 ? 6 - 5 * (gesamt / gesamtMax) : 6;
+  const note = Math.min(6, Math.max(1, Math.round(noteRaw * 10) / 10));
   return { anmeldung, anmeldungMax, fach, fachMax, produkt, produktMax, reflexion, reflexionMax, gesamt, gesamtMax, pct, noteVorschlag: note };
 }
 

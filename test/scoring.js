@@ -55,7 +55,10 @@ function computeScores(g, student, katalog = []) {
   const gesamt = anmeldung + fach + produkt + reflexion;
   const gesamtMax = anmeldungMax + fachMax + produktMax + reflexionMax;
   const pct = gesamtMax > 0 ? Math.round((gesamt / gesamtMax) * 100) : 0;
-  const note = pct >= 92 ? 1 : pct >= 81 ? 2 : pct >= 67 ? 3 : pct >= 50 ? 4 : pct >= 30 ? 5 : 6;
+  // Linearer Notenschlüssel: 0 Punkte = Note 6, volle Punktzahl = Note 1,
+  // dazwischen linear mit einer Nachkommastelle.
+  const noteRaw = gesamtMax > 0 ? 6 - 5 * (gesamt / gesamtMax) : 6;
+  const note = Math.min(6, Math.max(1, Math.round(noteRaw * 10) / 10));
   return { anmeldung, anmeldungMax, fach, fachMax, produkt, produktMax, reflexion, reflexionMax, gesamt, gesamtMax, pct, noteVorschlag: note };
 }
 
@@ -133,5 +136,18 @@ const gEmpty = { anmeldung: { bewertungProSchueler: {} }, praesentation: { bewer
 const sEmpty = computeScores(gEmpty, 'X', []);
 approxEqual(sEmpty.gesamt, 0, 'leere Gruppe gesamt=0');
 approxEqual(sEmpty.noteVorschlag, 6, 'leere Gruppe -> Note 6');
+
+// Linearer Notenschlüssel: 50% der Punkte -> genau Note 3,5 (Mitte zwischen 1 und 6)
+const jmnAlleMittel = { ideenentwicklung: 'mittel', information: 'mittel', struktur: 'mittel', projektorg: 'mittel', kreativitaet: 'mittel', kritisch: 'mittel', kooperation: 'mittel', kommunikation: 'mittel', reflexion: 'mittel' };
+const gHalf = {
+  anmeldung: { bewertungProSchueler: { E: { idee: 1, vollstaendigkeit: 1, struktur: 1, meilensteineP: 1, sorgfalt: 1 } } }, // 5/10
+  praesentation: { bewertungProSchueler: { E: { struktur: 2, medien: 2, kommunikation: 1.5, verteilung: 2, sinnhaftigkeit: 1.5, tiefe: 1.5, richtigkeit: 2 } } }, // fach 5/10 + produkt 7.5/15
+  reflexion: { E: { selbst: jmnAlleMittel, fremd: jmnAlleMittel } }, // 7.5/15
+  aktivKriterien: { anmeldung: [], praesentation: [], reflexion: [] },
+};
+const sHalf = computeScores(gHalf, 'E', []);
+approxEqual(sHalf.gesamt, 25, 'gHalf gesamt = 50% von 50');
+approxEqual(sHalf.gesamtMax, 50, 'gHalf gesamtMax = 50');
+approxEqual(sHalf.noteVorschlag, 3.5, 'linearer Notenschlüssel: 50% Punkte -> Note 3,5');
 
 console.log('ALLE SCORING-TESTS OK');
