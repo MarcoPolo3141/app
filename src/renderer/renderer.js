@@ -63,6 +63,76 @@ const JMN_BAUSTEINE = {
   kommunikation: "sich klar und verständlich ausgedrückt",
   reflexion: "das eigene Vorgehen reflektiert",
 };
+// Erklärungen zu den Einschätzungs-Kategorien (Selbst-/Fremdeinschätzung Reflexion):
+// Definition der Kategorie + je ein Beispiel, wie sich "ja"/"mittel"/"nein" zeigen könnte.
+// Wird als kleines Info-Icon mit Tooltip direkt neben der Kategorie angezeigt.
+const EXPLAIN_BAUSTEINE = {
+  ideenentwicklung: {
+    def: "Wie eigenständig und durchdacht eigene Ideen für das Projekt entwickelt und eingebracht wurden.",
+    ja: "Hat einen eigenen, durchdachten Vorschlag eingebracht und weiterentwickelt.",
+    mittel: "Hat Ideen anderer aufgegriffen und sinnvoll ergänzt.",
+    nein: "Hat kaum eigene Ideen eingebracht, überwiegend Vorgaben übernommen.",
+  },
+  information: {
+    def: "Wie zielgerichtet Informationen recherchiert, geprüft und für das Projekt genutzt wurden.",
+    ja: "Hat passende Quellen selbstständig gefunden, geprüft und sinnvoll eingebaut.",
+    mittel: "Hat Informationen genutzt, dabei aber Unterstützung gebraucht.",
+    nein: "Hat kaum recherchiert oder Informationen unreflektiert übernommen.",
+  },
+  struktur: {
+    def: "Wie klar und nachvollziehbar Ergebnisse strukturiert und dargestellt wurden.",
+    ja: "Ergebnisse sind klar gegliedert, ein roter Faden ist erkennbar.",
+    mittel: "Struktur ist grundsätzlich vorhanden, stellenweise aber unübersichtlich.",
+    nein: "Darstellung wirkt unstrukturiert oder ist schwer nachvollziehbar.",
+  },
+  projektorg: {
+    def: "Wie gut Arbeitsschritte geplant, Zeit eingeteilt und Aufgaben organisiert wurden.",
+    ja: "Hat Aufgaben und Zeitplan eigenständig im Blick behalten, Termine eingehalten.",
+    mittel: "Organisation war größtenteils vorhanden, teils mit Erinnerung nötig.",
+    nein: "Arbeitsschritte wurden kaum geplant, Termine häufig verpasst.",
+  },
+  kreativitaet: {
+    def: "Wie originell und einfallsreich Lösungswege und Ideen im Projekt waren.",
+    ja: "Hat ungewöhnliche, eigenständige Lösungswege gefunden.",
+    mittel: "Hat vorhandene Ideen kreativ angepasst.",
+    nein: "Hat sich stark an Vorgaben orientiert, wenig eigene Note eingebracht.",
+  },
+  kritisch: {
+    def: "Wie reflektiert eigene und fremde Ergebnisse hinterfragt, geprüft und eingeordnet wurden.",
+    ja: "Hat eigene Ergebnisse und Quellen aktiv hinterfragt und Schwächen erkannt.",
+    mittel: "Hat vereinzelt hinterfragt, aber nicht durchgängig.",
+    nein: "Hat Informationen und eigene Ergebnisse unkritisch übernommen.",
+  },
+  kooperation: {
+    def: "Wie zuverlässig und konstruktiv im Team zusammengearbeitet wurde.",
+    ja: "Hat sich zuverlässig eingebracht, andere unterstützt, Konflikte konstruktiv gelöst.",
+    mittel: "Hat mitgearbeitet, war aber nicht durchgängig aktiv beteiligt.",
+    nein: "Hat sich kaum eingebracht oder die Zusammenarbeit erschwert.",
+  },
+  kommunikation: {
+    def: "Wie klar, verständlich und adressatengerecht kommuniziert wurde – im Team wie in der Präsentation.",
+    ja: "Hat sich klar, sicher und verständlich ausgedrückt.",
+    mittel: "Kommunikation war verständlich, aber stellenweise unsicher oder unklar.",
+    nein: "Kommunikation war schwer verständlich oder sehr zurückhaltend.",
+  },
+  reflexion: {
+    def: "Wie gut eigenes Handeln, Ergebnisse und der Lernprozess rückblickend eingeschätzt wurden.",
+    ja: "Kann eigene Stärken und Schwächen im Projekt treffend benennen und einordnen.",
+    mittel: "Kann den eigenen Lernprozess grob einschätzen, mit Unterstützung.",
+    nein: "Kann eigenes Vorgehen kaum rückblickend einschätzen.",
+  },
+};
+function infoIcon(key) {
+  const info = EXPLAIN_BAUSTEINE[key];
+  if (!info) return "";
+  return `<span class="info-icon" tabindex="0">i<span class="info-tip">
+    <span class="tip-def">${esc(info.def)}</span>
+    <span class="tip-ex ja"><b>ja:</b> ${esc(info.ja)}</span>
+    <span class="tip-ex mittel"><b>mittel:</b> ${esc(info.mittel)}</span>
+    <span class="tip-ex nein"><b>nein:</b> ${esc(info.nein)}</span>
+  </span></span>`;
+}
+
 // Präsentationsbewertung -> nur gut bis sehr gut bewertete Aspekte (>= 75 % der
 // erreichbaren Punktzahl) fließen als positive Erwähnung mit ein.
 const PRAESENTATION_BAUSTEINE = {
@@ -494,17 +564,27 @@ function tabReflexion(g) {
       <span class="jmn-btn ${val === "mittel" ? "sel-mittel" : ""}" data-jmn-set="mittel">mittel</span>
       <span class="jmn-btn ${val === "nein" ? "sel-nein" : ""}" data-jmn-set="nein">nein</span>
     </div>`;
+  const selbstPunkte = scoreFromJmn(selbst);
+  const fremdPunkte = scoreFromJmn(fremd);
+  const reflexionBasis = Math.round(((selbstPunkte + fremdPunkte) / 2) * 2) / 2;
+  const rZusatz = zusatzScore(rec, rKrit);
+  const reflexionGesamt = reflexionBasis + rZusatz.sum;
+  const reflexionMax = 15 + rZusatz.max;
   return `
   <div class="student-switch">${g.members.map((m, i) => `<span class="stu-pill ${state.student === i ? "sel" : ""}" data-stu="${i}">${esc(m)}</span>`).join("")}</div>
   <div class="grid2" style="grid-template-columns:1fr 1fr;">
     <div class="card" style="padding:20px;">
-      <div class="reflect-col-head"><div class="badge">S</div><b>Selbsteinschätzung – ${esc(student)}</b></div>
-      ${cats.map(([cat, items]) => `<div class="cat-label">${cat}</div>${items.map(([k, l]) => `<div class="crit-item"><span>${l}</span>${jmn("selbst", k, selbst[k])}</div>`).join("")}`).join("")}
+      <div class="reflect-col-head"><div class="badge">S</div><b>Selbsteinschätzung – ${esc(student)}</b><span class="crit-pts" style="margin-left:auto;">${selbstPunkte} / 15 P</span></div>
+      ${cats.map(([cat, items]) => `<div class="cat-label">${cat}</div>${items.map(([k, l]) => `<div class="crit-item"><span>${l}${infoIcon(k)}</span>${jmn("selbst", k, selbst[k])}</div>`).join("")}`).join("")}
     </div>
     <div class="card" style="padding:20px;">
-      <div class="reflect-col-head"><div class="badge" style="background:var(--yellow); color:var(--ink);">L</div><b>Fremdeinschätzung – Lehrkraft</b></div>
-      ${cats.map(([cat, items]) => `<div class="cat-label">${cat}</div>${items.map(([k, l]) => `<div class="crit-item"><span>${l}</span>${jmn("fremd", k, fremd[k])}</div>`).join("")}`).join("")}
+      <div class="reflect-col-head"><div class="badge" style="background:var(--yellow); color:var(--ink);">L</div><b>Fremdeinschätzung – Lehrkraft</b><span class="crit-pts" style="margin-left:auto;">${fremdPunkte} / 15 P</span></div>
+      ${cats.map(([cat, items]) => `<div class="cat-label">${cat}</div>${items.map(([k, l]) => `<div class="crit-item"><span>${l}${infoIcon(k)}</span>${jmn("fremd", k, fremd[k])}</div>`).join("")}`).join("")}
     </div>
+  </div>
+  <div class="card" style="padding:14px 20px; margin-top:12px; display:flex; justify-content:space-between; align-items:center;">
+    <b style="font-size:13px;">Reflexion gesamt (Ø aus Selbst- und Fremdeinschätzung${rZusatz.max > 0 ? " + Zusatzkriterien" : ""})</b>
+    <b style="font-size:16px;">${reflexionGesamt} / ${reflexionMax} P</b>
   </div>
   <div class="grid2" style="margin-top:16px;">
     <div class="card" style="padding:20px;">
@@ -599,6 +679,15 @@ function tabBewertung(g) {
   const scores = computeScores(g, student);
   const rec = g.reflexion[student] || {};
   const note = rec.note ?? scores.noteVorschlag;
+  const noteAbweichend = rec.note !== undefined && rec.note !== null && rec.note !== "" && Number(rec.note) !== scores.noteVorschlag;
+  const notenschluessel = [1, 2, 3, 4, 5, 6].map((n) => {
+    const abPunkte = Math.round((scores.gesamtMax * (6 - n) / 5) * 10) / 10;
+    return { n, abPunkte, pct: (6 - n) * 20 };
+  });
+  // Hervorgehobene Zeile: die beste Notenstufe, deren "ab X Punkten"-Schwelle mit den
+  // tatsächlich erreichten Punkten bereits erreicht ist (entspricht der klassischen Lesart
+  // einer Punktetabelle: "ab X Punkten Note Y").
+  const aktiveNotenstufe = (notenschluessel.find((row) => scores.gesamt >= row.abPunkte) || notenschluessel[notenschluessel.length - 1]).n;
   return `
   <div class="student-switch">${g.members.map((m, i) => `<span class="stu-pill ${state.student === i ? "sel" : ""}" data-stu="${i}">${esc(m)}</span>`).join("")}</div>
   <div class="grid2">
@@ -617,7 +706,18 @@ function tabBewertung(g) {
         <b>Gesamt</b><b style="font-size:17px;">${scores.gesamt} / ${scores.gesamtMax} P</b>
       </div>
       <div class="field-row" style="margin-top:14px;"><label>Note (Vorschlag: ${scores.noteVorschlag}) – anpassbar, Dezimalstellen möglich</label>
-        <input type="number" min="1" max="6" step="0.1" value="${note}" data-refl-field="note" style="width:90px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <input type="number" min="1" max="6" step="0.1" value="${note}" data-refl-field="note" style="width:90px;">
+          ${noteAbweichend ? `<span class="btn btn-ghost btn-sm" id="uebernehmeNoteVorschlag">Vorschlag übernehmen</span>` : ""}
+        </div>
+      </div>
+      <div class="field-row" style="margin-top:10px;">
+        <label>Notenschlüssel <span style="font-weight:500; color:var(--ink-faint); text-transform:none;">– passt sich automatisch an die ${scores.gesamtMax} P Gesamtpunktzahl an</span></label>
+        <div class="notenschluessel">
+          ${notenschluessel.map((row) => `<div class="notenschluessel-row ${row.n === aktiveNotenstufe ? "aktiv" : ""}">
+            <span class="ns-note">${row.n}</span><span class="ns-pts">ab ${row.abPunkte} P</span><span class="ns-pct">${row.pct} %</span>
+          </div>`).join("")}
+        </div>
       </div>
       <div class="field-row"><label>Begründung</label><textarea data-refl-field="begruendung">${esc(rec.begruendung)}</textarea></div>
       <div class="field-row">
@@ -1045,6 +1145,17 @@ function bindEvents() {
     const student = g.members[state.student];
     const rec = { ...(g.reflexion[student] || {}) };
     rec.staerkenText = buildVollstaendigenFliesstext(g, student);
+    await window.zwdk.updateGroup(g.id, { reflexion: { [student]: rec } });
+    await refreshGroups(); render();
+  };
+
+  // Manuell gesetzte Note wieder auf den berechneten Vorschlag zurücksetzen
+  const uebernehmeNoteBtn = document.getElementById("uebernehmeNoteVorschlag");
+  if (uebernehmeNoteBtn) uebernehmeNoteBtn.onclick = async () => {
+    const g = findGroup(state.groupId);
+    const student = g.members[state.student];
+    const scores = computeScores(g, student);
+    const rec = { ...(g.reflexion[student] || {}), note: scores.noteVorschlag };
     await window.zwdk.updateGroup(g.id, { reflexion: { [student]: rec } });
     await refreshGroups(); render();
   };

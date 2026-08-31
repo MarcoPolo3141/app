@@ -217,6 +217,27 @@ input[type=range]{flex:1; accent-color:var(--ink); height:5px;}
 .reflect-col-head .badge{width:26px;height:26px;border-radius:50%;background:var(--ink);color:var(--yellow);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;}
 .reflect-col-head b{font-size:13.5px;}
 
+.info-icon{display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; border-radius:50%; background:var(--border); color:var(--ink-soft); font-size:9.5px; font-weight:700; font-style:italic; cursor:help; margin-left:6px; position:relative; vertical-align:middle;}
+.info-icon:hover, .info-icon:focus{background:var(--ink); color:var(--yellow); outline:none;}
+.info-tip{position:absolute; z-index:60; left:50%; bottom:calc(100% + 9px); transform:translateX(-50%) translateY(4px); width:250px; background:var(--ink); color:#fff; font-size:11.5px; font-weight:500; line-height:1.5; padding:11px 13px; border-radius:11px; opacity:0; visibility:hidden; transition:opacity 140ms ease-out, transform 140ms ease-out; text-align:left; box-shadow:0 12px 30px rgba(0,0,0,.28); pointer-events:none; font-style:normal;}
+.info-icon:hover .info-tip, .info-icon:focus .info-tip{opacity:1; visibility:visible; transform:translateX(-50%) translateY(0);}
+.info-tip .tip-def{display:block; color:#f0f0ea;}
+.info-tip .tip-ex{display:block; margin-top:7px; color:#cfcfc8;}
+.info-tip .tip-ex b{font-weight:700;}
+.info-tip .tip-ex.ja b{color:var(--green);}
+.info-tip .tip-ex.mittel b{color:var(--amber);}
+.info-tip .tip-ex.nein b{color:var(--red);}
+
+.notenschluessel{border:1px solid var(--border); border-radius:11px; overflow:hidden;}
+.notenschluessel-row{display:flex; align-items:center; gap:10px; padding:7px 12px; font-size:12.5px; border-bottom:1px solid var(--border);}
+.notenschluessel-row:last-child{border-bottom:none;}
+.notenschluessel-row.aktiv{background:var(--yellow); font-weight:700;}
+.ns-note{width:16px; font-weight:700;}
+.ns-pts{color:var(--ink-soft); flex:1;}
+.notenschluessel-row.aktiv .ns-pts{color:var(--ink);}
+.ns-pct{color:var(--ink-faint); font-size:11px;}
+.notenschluessel-row.aktiv .ns-pct{color:var(--ink);}
+
 .impulse-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
 .impulse-card{background:var(--yellow); border-radius:10px; padding:12px 13px; font-size:12.5px; font-weight:600; line-height:1.35; cursor:pointer; transition:transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out);}
 .impulse-card:hover{transform:translateY(-2px); box-shadow:0 6px 14px rgba(0,0,0,.08);}
